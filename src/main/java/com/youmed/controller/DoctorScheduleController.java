@@ -1,7 +1,9 @@
 package com.youmed.controller;
 
 import com.youmed.dto.request.DoctorScheduleRequest;
+import com.youmed.dto.request.DoctorScheduleRangeRequest;
 import com.youmed.dto.response.DoctorScheduleResponse;
+import com.youmed.dto.response.DoctorScheduleRangeResponse;
 import com.youmed.dto.response.TimeSlotResponse;
 import com.youmed.service.DoctorScheduleService;
 import jakarta.validation.Valid;
@@ -25,6 +27,13 @@ public class DoctorScheduleController {
     @PreAuthorize("hasAnyRole('ADMIN', 'DOCTOR')")
     public DoctorScheduleResponse createSchedule(@Valid @RequestBody DoctorScheduleRequest request) {
         return doctorScheduleService.createSchedule(request);
+    }
+
+    @PostMapping("/doctor-schedules/range")
+    @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("hasAnyRole('ADMIN', 'DOCTOR')")
+    public DoctorScheduleRangeResponse createScheduleRange(@Valid @RequestBody DoctorScheduleRangeRequest request) {
+        return doctorScheduleService.createScheduleRange(request);
     }
 
     @GetMapping("/doctor-schedules/doctor/{doctorId}")
