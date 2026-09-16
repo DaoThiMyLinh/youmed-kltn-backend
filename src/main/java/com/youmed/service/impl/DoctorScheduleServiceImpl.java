@@ -13,11 +13,16 @@ import com.youmed.exception.ResourceNotFoundException;
 import com.youmed.repository.DoctorRepository;
 import com.youmed.repository.DoctorScheduleRepository;
 import com.youmed.repository.TimeSlotRepository;
+import com.youmed.repository.UserRepository;
 import com.youmed.service.DoctorScheduleService;
 import com.youmed.service.TimeSlotService;
+import com.youmed.entity.User;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.access.AccessDeniedException;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -31,12 +36,40 @@ public class DoctorScheduleServiceImpl implements DoctorScheduleService {
 
     private final DoctorScheduleRepository doctorScheduleRepository;
     private final DoctorRepository doctorRepository;
+    private final UserRepository userRepository;
     private final TimeSlotService timeSlotService;
+
+    private void validateOwnership(Long requestDoctorId) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated()) {
+            throw new AccessDeniedException("User not authenticated");
+        }
+
+        boolean isAdmin = auth.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+
+        if (isAdmin) {
+            return;
+        }
+
+        String currentEmail = auth.getName();
+        User user = userRepository.findByEmail(currentEmail)
+                .orElseThrow(() -> new AccessDeniedException("User not found"));
+
+        Doctor doctor = doctorRepository.findByUserId(user.getId())
+                .orElseThrow(() -> new AccessDeniedException("Doctor profile not found"));
+
+        if (!doctor.getId().equals(requestDoctorId)) {
+            throw new AccessDeniedException("You can only create schedules for yourself");
+        }
+    }
     private final TimeSlotRepository timeSlotRepository;
 
     @Override
     @Transactional
     public DoctorScheduleResponse createSchedule(DoctorScheduleRequest request) {
+        validateOwnership(request.getDoctorId());
+        
         LocalTime minStartTime = LocalTime.of(6, 30);
         LocalTime maxEndTime = LocalTime.of(16, 30);
 
@@ -80,6 +113,8 @@ public class DoctorScheduleServiceImpl implements DoctorScheduleService {
     @Override
     @Transactional
     public DoctorScheduleRangeResponse createScheduleRange(DoctorScheduleRangeRequest request) {
+        validateOwnership(request.getDoctorId());
+        
         if (request.getStartDate().isAfter(request.getEndDate())) {
             throw new IllegalArgumentException("Start date must be before or equal to end date");
         }
