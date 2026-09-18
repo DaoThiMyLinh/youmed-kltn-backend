@@ -1,7 +1,9 @@
 package com.youmed.service.impl;
 
 import com.youmed.dto.request.DoctorScheduleRequest;
+import com.youmed.dto.request.DoctorScheduleRangeRequest;
 import com.youmed.dto.response.DoctorScheduleResponse;
+import com.youmed.dto.response.DoctorScheduleRangeResponse;
 import com.youmed.dto.response.TimeSlotResponse;
 import com.youmed.entity.Doctor;
 import com.youmed.entity.DoctorSchedule;
@@ -11,13 +13,20 @@ import com.youmed.exception.ResourceNotFoundException;
 import com.youmed.repository.DoctorRepository;
 import com.youmed.repository.DoctorScheduleRepository;
 import com.youmed.repository.TimeSlotRepository;
+import com.youmed.repository.UserRepository;
 import com.youmed.service.DoctorScheduleService;
 import com.youmed.service.TimeSlotService;
+import com.youmed.entity.User;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.access.AccessDeniedException;
 
 import java.time.LocalDate;
+import java.time.LocalTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -27,12 +36,55 @@ public class DoctorScheduleServiceImpl implements DoctorScheduleService {
 
     private final DoctorScheduleRepository doctorScheduleRepository;
     private final DoctorRepository doctorRepository;
+    private final UserRepository userRepository;
     private final TimeSlotService timeSlotService;
+
+    private void validateOwnership(Long requestDoctorId) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated()) {
+            throw new AccessDeniedException("User not authenticated");
+        }
+
+        boolean isAdmin = auth.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+
+        if (isAdmin) {
+            return;
+        }
+
+        String currentEmail = auth.getName();
+        User user = userRepository.findByEmail(currentEmail)
+                .orElseThrow(() -> new AccessDeniedException("User not found"));
+
+        Doctor doctor = doctorRepository.findByUserId(user.getId())
+                .orElseThrow(() -> new AccessDeniedException("Doctor profile not found"));
+
+        if (!doctor.getId().equals(requestDoctorId)) {
+            throw new AccessDeniedException("You can only create schedules for yourself");
+        }
+    }
     private final TimeSlotRepository timeSlotRepository;
 
     @Override
     @Transactional
     public DoctorScheduleResponse createSchedule(DoctorScheduleRequest request) {
+        validateOwnership(request.getDoctorId());
+        
+        LocalTime minStartTime = LocalTime.of(6, 30);
+        LocalTime maxEndTime = LocalTime.of(16, 30);
+
+        if (request.getStartTime().isBefore(minStartTime)) {
+            throw new IllegalArgumentException("Start time cannot be before 06:30");
+        }
+        if (request.getEndTime().isAfter(maxEndTime)) {
+            throw new IllegalArgumentException("End time cannot be after 16:30");
+        }
+        if (request.getStartTime().getMinute() != 0 && request.getStartTime().getMinute() != 30) {
+            throw new IllegalArgumentException("Start time minute must be 00 or 30");
+        }
+        if (request.getEndTime().getMinute() != 0 && request.getEndTime().getMinute() != 30) {
+            throw new IllegalArgumentException("End time minute must be 00 or 30");
+        }
         if (!request.getEndTime().isAfter(request.getStartTime())) {
             throw new IllegalArgumentException("End time must be after start time");
         }
@@ -56,6 +108,73 @@ public class DoctorScheduleServiceImpl implements DoctorScheduleService {
         timeSlotService.generateTimeSlots(schedule);
 
         return mapToResponse(schedule);
+    }
+
+    @Override
+    @Transactional
+    public DoctorScheduleRangeResponse createScheduleRange(DoctorScheduleRangeRequest request) {
+        validateOwnership(request.getDoctorId());
+        
+        if (request.getStartDate().isAfter(request.getEndDate())) {
+            throw new IllegalArgumentException("Start date must be before or equal to end date");
+        }
+        if (request.getStartDate().isBefore(LocalDate.now())) {
+            throw new IllegalArgumentException("Cannot create schedule for past dates");
+        }
+
+        LocalTime minStartTime = LocalTime.of(6, 30);
+        LocalTime maxEndTime = LocalTime.of(16, 30);
+
+        if (request.getStartTime().isBefore(minStartTime)) {
+            throw new IllegalArgumentException("Start time cannot be before 06:30");
+        }
+        if (request.getEndTime().isAfter(maxEndTime)) {
+            throw new IllegalArgumentException("End time cannot be after 16:30");
+        }
+        if (request.getStartTime().getMinute() != 0 && request.getStartTime().getMinute() != 30) {
+            throw new IllegalArgumentException("Start time minute must be 00 or 30");
+        }
+        if (request.getEndTime().getMinute() != 0 && request.getEndTime().getMinute() != 30) {
+            throw new IllegalArgumentException("End time minute must be 00 or 30");
+        }
+        if (!request.getEndTime().isAfter(request.getStartTime())) {
+            throw new IllegalArgumentException("End time must be after start time");
+        }
+
+        Doctor doctor = doctorRepository.findById(request.getDoctorId())
+                .orElseThrow(() -> new ResourceNotFoundException("Doctor not found"));
+
+        List<LocalDate> createdDates = new ArrayList<>();
+        List<LocalDate> skippedDates = new ArrayList<>();
+
+        LocalDate currentDate = request.getStartDate();
+        while (!currentDate.isAfter(request.getEndDate())) {
+            if (doctorScheduleRepository.findByDoctorIdAndWorkingDate(request.getDoctorId(), currentDate).isPresent()) {
+                skippedDates.add(currentDate);
+            } else {
+                DoctorSchedule schedule = DoctorSchedule.builder()
+                        .doctor(doctor)
+                        .workingDate(currentDate)
+                        .startTime(request.getStartTime())
+                        .endTime(request.getEndTime())
+                        .active(true)
+                        .build();
+                schedule = doctorScheduleRepository.save(schedule);
+                timeSlotService.generateTimeSlots(schedule);
+                createdDates.add(currentDate);
+            }
+            currentDate = currentDate.plusDays(1);
+        }
+
+        String message = createdDates.isEmpty() 
+            ? "Không có ngày mới nào được tạo" 
+            : "Tạo lịch làm việc hoàn tất";
+
+        return DoctorScheduleRangeResponse.builder()
+                .message(message)
+                .createdDates(createdDates)
+                .skippedDates(skippedDates)
+                .build();
     }
 
     @Override
