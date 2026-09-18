@@ -33,7 +33,6 @@ public class DoctorController {
 
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN','DOCTOR','PATIENT')")
     public Page<DoctorResponse> getAllDoctors(
             @RequestParam(required = false) Boolean active,
             @RequestParam(defaultValue = "0") int page,
@@ -47,7 +46,6 @@ public class DoctorController {
 
 
     @GetMapping("/search")
-    @PreAuthorize("hasAnyRole('ADMIN','DOCTOR','PATIENT')")
     public Page<DoctorResponse> searchDoctors(
             @RequestParam(required = false) String keyword,
             @RequestParam(defaultValue = "0") int page,
@@ -60,7 +58,6 @@ public class DoctorController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN','DOCTOR','PATIENT')")
     public DoctorResponse getDoctorById(
             @PathVariable Long id
     ){
