@@ -15,4 +15,6 @@ public interface DoctorRepository extends JpaRepository<Doctor, Long> {
     Page<Doctor> findByUserFullNameContainingIgnoreCaseOrSpecialtyNameContainingIgnoreCase(String fullName, String specialtyName, Pageable pageable);
     
     Page<Doctor> findByActive(Boolean active, Pageable pageable);
+    
+    java.util.List<Doctor> findBySpecialtyId(Long specialtyId);
 }

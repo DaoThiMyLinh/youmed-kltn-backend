@@ -24,6 +24,10 @@ public class Specialty extends BaseEntity {
 
     private String imageUrl;
 
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "manager_id", unique = true)
+    private User manager;
+
     @Column(nullable = false)
     @Builder.Default
     private Boolean active = true;

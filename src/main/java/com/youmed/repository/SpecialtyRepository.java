@@ -12,4 +12,7 @@ public interface SpecialtyRepository extends JpaRepository<Specialty, Long> {
     Page<Specialty> findByActive(Boolean active, Pageable pageable);
     boolean existsByNameIgnoreCase(String name);
     boolean existsByNameIgnoreCaseAndIdNot(String name, Long id);
+    boolean existsByManagerId(Long managerId);
+    boolean existsByManagerIdAndIdNot(Long managerId, Long id);
+    java.util.Optional<Specialty> findByManagerId(Long managerId);
 }

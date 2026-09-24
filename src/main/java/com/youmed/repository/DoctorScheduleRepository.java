@@ -12,4 +12,5 @@ import java.util.Optional;
 public interface DoctorScheduleRepository extends JpaRepository<DoctorSchedule, Long> {
     Optional<DoctorSchedule> findByDoctorIdAndWorkingDate(Long doctorId, LocalDate workingDate);
     List<DoctorSchedule> findByDoctorId(Long doctorId);
+    List<DoctorSchedule> findByDoctor_Specialty_Id(Long specialtyId);
 }

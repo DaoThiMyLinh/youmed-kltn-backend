@@ -16,6 +16,6 @@ public interface TimeSlotRepository extends JpaRepository<TimeSlot, Long> {
 
     List<TimeSlot> findByBookedFalse();
 
-    @Query("SELECT ts FROM TimeSlot ts WHERE ts.doctorSchedule.doctor.id = :doctorId AND ts.doctorSchedule.workingDate = :date ORDER BY ts.startDateTime ASC")
+    @Query("SELECT ts FROM TimeSlot ts WHERE ts.doctorSchedule.doctor.id = :doctorId AND ts.doctorSchedule.workingDate = :date AND ts.doctorSchedule.status = 'APPROVED' ORDER BY ts.startDateTime ASC")
     List<TimeSlot> findAvailableSlots(@Param("doctorId") Long doctorId, @Param("date") LocalDate date);
 }

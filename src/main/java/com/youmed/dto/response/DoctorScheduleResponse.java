@@ -16,4 +16,6 @@ public class DoctorScheduleResponse {
     private LocalTime startTime;
     private LocalTime endTime;
     private Boolean active;
+    private com.youmed.enums.ScheduleStatus status;
+    private String rejectionReason;
 }

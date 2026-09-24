@@ -6,7 +6,11 @@ import com.youmed.entity.Specialty;
 import com.youmed.exception.DuplicateResourceException;
 import com.youmed.exception.ResourceNotFoundException;
 import com.youmed.repository.SpecialtyRepository;
+import com.youmed.repository.UserRepository;
 import com.youmed.service.SpecialtyService;
+import com.youmed.entity.User;
+import com.youmed.enums.Role;
+import com.youmed.exception.BadRequestException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -19,6 +23,7 @@ import org.springframework.stereotype.Service;
 public class SpecialtyServiceImpl implements SpecialtyService {
 
     private final SpecialtyRepository specialtyRepository;
+    private final UserRepository userRepository;
 
     @Override
     public SpecialtyResponse createSpecialty(SpecialtyRequest request) {
@@ -28,10 +33,23 @@ public class SpecialtyServiceImpl implements SpecialtyService {
             throw new DuplicateResourceException("Specialty name already exists");
         }
 
+        User manager = null;
+        if (request.getManagerId() != null) {
+            manager = userRepository.findById(request.getManagerId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Manager not found"));
+            if (manager.getRole() != Role.DEPARTMENT_MANAGER) {
+                throw new BadRequestException("User must have DEPARTMENT_MANAGER role");
+            }
+            if (specialtyRepository.existsByManagerId(manager.getId())) {
+                throw new DuplicateResourceException("Manager is already assigned to another specialty");
+            }
+        }
+
         Specialty specialty = Specialty.builder()
                 .name(normalizedName)
                 .description(request.getDescription())
                 .imageUrl(request.getImageUrl())
+                .manager(manager)
                 .active(request.getActive() != null ? request.getActive() : true)
                 .build();
         
@@ -55,6 +73,20 @@ public class SpecialtyServiceImpl implements SpecialtyService {
         
         if (request.getActive() != null) {
             specialty.setActive(request.getActive());
+        }
+
+        if (request.getManagerId() != null) {
+            User manager = userRepository.findById(request.getManagerId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Manager not found"));
+            if (manager.getRole() != Role.DEPARTMENT_MANAGER) {
+                throw new BadRequestException("User must have DEPARTMENT_MANAGER role");
+            }
+            if (specialtyRepository.existsByManagerIdAndIdNot(manager.getId(), id)) {
+                throw new DuplicateResourceException("Manager is already assigned to another specialty");
+            }
+            specialty.setManager(manager);
+        } else {
+            specialty.setManager(null);
         }
         
         return mapToResponse(specialtyRepository.save(specialty));
@@ -103,6 +135,8 @@ public class SpecialtyServiceImpl implements SpecialtyService {
                 .description(specialty.getDescription())
                 .imageUrl(specialty.getImageUrl())
                 .active(specialty.getActive())
+                .managerId(specialty.getManager() != null ? specialty.getManager().getId() : null)
+                .managerName(specialty.getManager() != null ? specialty.getManager().getFullName() : null)
                 .build();
     }
 

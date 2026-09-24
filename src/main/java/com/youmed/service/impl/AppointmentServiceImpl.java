@@ -88,6 +88,10 @@ public class AppointmentServiceImpl implements AppointmentService {
             throw new BadRequestException("Doctor schedule is inactive");
         }
 
+        if (timeSlot.getDoctorSchedule().getStatus() != com.youmed.enums.ScheduleStatus.APPROVED) {
+            throw new BadRequestException("Doctor schedule is not approved");
+        }
+
         if (!Boolean.TRUE.equals(doctor.getActive())) {
             throw new BadRequestException("Doctor is inactive");
         }

@@ -17,6 +17,7 @@ import com.youmed.repository.UserRepository;
 import com.youmed.service.DoctorScheduleService;
 import com.youmed.service.TimeSlotService;
 import com.youmed.entity.User;
+import com.youmed.enums.ScheduleStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -102,6 +103,7 @@ public class DoctorScheduleServiceImpl implements DoctorScheduleService {
                 .startTime(request.getStartTime())
                 .endTime(request.getEndTime())
                 .active(true)
+                .status(ScheduleStatus.PENDING)
                 .build();
 
         schedule = doctorScheduleRepository.save(schedule);
@@ -158,6 +160,7 @@ public class DoctorScheduleServiceImpl implements DoctorScheduleService {
                         .startTime(request.getStartTime())
                         .endTime(request.getEndTime())
                         .active(true)
+                        .status(ScheduleStatus.PENDING)
                         .build();
                 schedule = doctorScheduleRepository.save(schedule);
                 timeSlotService.generateTimeSlots(schedule);
@@ -190,6 +193,8 @@ public class DoctorScheduleServiceImpl implements DoctorScheduleService {
         DoctorSchedule schedule = doctorScheduleRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Schedule not found"));
         
+        validateOwnership(schedule.getDoctor().getId());
+
         timeSlotService.deleteSlotsBySchedule(id);
         doctorScheduleRepository.delete(schedule);
     }
@@ -210,6 +215,8 @@ public class DoctorScheduleServiceImpl implements DoctorScheduleService {
                 .startTime(schedule.getStartTime())
                 .endTime(schedule.getEndTime())
                 .active(schedule.getActive())
+                .status(schedule.getStatus())
+                .rejectionReason(schedule.getRejectionReason())
                 .build();
     }
 
