@@ -142,7 +142,6 @@ public class DoctorServiceImpl implements DoctorService {
         User user = doctor.getUser();
         user.setFullName(request.getFullName());
         user.setPhone(request.getPhone());
-        userRepository.save(user);
 
         if (request.getSpecialtyId() != null) {
             Specialty specialty = specialtyRepository.findById(request.getSpecialtyId())
@@ -155,7 +154,10 @@ public class DoctorServiceImpl implements DoctorService {
 
         if (request.getActive() != null) {
             doctor.setActive(request.getActive());
+            user.setEnabled(request.getActive());
         }
+
+        userRepository.save(user);
 
 
         return mapToResponse(
@@ -185,7 +187,6 @@ public class DoctorServiceImpl implements DoctorService {
                     .id(doctor.getSpecialty().getId())
                     .name(doctor.getSpecialty().getName())
                     .description(doctor.getSpecialty().getDescription())
-                    .imageUrl(doctor.getSpecialty().getImageUrl())
                     .active(doctor.getSpecialty().getActive())
                     .build();
         }

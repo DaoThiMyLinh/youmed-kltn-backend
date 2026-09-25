@@ -9,7 +9,6 @@ public class SpecialtyResponse {
     private Long id;
     private String name;
     private String description;
-    private String imageUrl;
     private Boolean active;
     private Long managerId;
     private String managerName;

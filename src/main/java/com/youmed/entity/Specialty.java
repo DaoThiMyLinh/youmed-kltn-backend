@@ -22,8 +22,6 @@ public class Specialty extends BaseEntity {
     @Column(columnDefinition = "TEXT")
     private String description;
 
-    private String imageUrl;
-
     @OneToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "manager_id", unique = true)
     private User manager;

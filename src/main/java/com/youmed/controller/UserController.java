@@ -20,19 +20,54 @@ public class UserController {
 
     @GetMapping
     @PreAuthorize("hasRole('ADMIN')")
-    public List<User> getAllUsers() {
-        return userService.getAllUsers();
+    public org.springframework.data.domain.Page<UserResponse> getAllUsers(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String role,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "id") String sortBy,
+            @RequestParam(defaultValue = "ASC") String sortDir
+    ) {
+        return userService.getAllUsers(keyword, role, page, size, sortBy, sortDir);
+    }
+
+    @GetMapping("/patients")
+    @PreAuthorize("hasRole('ADMIN')")
+    public org.springframework.data.domain.Page<UserResponse> getPatients(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "id") String sortBy,
+            @RequestParam(defaultValue = "ASC") String sortDir
+    ) {
+        return userService.getAllUsers(keyword, "PATIENT", page, size, sortBy, sortDir);
+    }
+
+    @GetMapping("/patients/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public UserResponse getPatientById(@PathVariable Long id) {
+        return userService.getPatientById(id);
     }
 
     @GetMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
-    public User getUserById(@PathVariable Long id) {
-        return userService.getUserById(id).orElse(null);
+    public UserResponse getUserById(@PathVariable Long id) {
+        return userService.getUserById(id);
+    }
+
+    @PutMapping("/{id}/admin")
+    @PreAuthorize("hasRole('ADMIN')")
+    public UserResponse adminUpdateUserStatus(
+            @PathVariable Long id,
+            @jakarta.validation.Valid @RequestBody com.youmed.dto.request.AdminUpdateUserRequest request,
+            Authentication authentication
+    ) {
+        return userService.adminUpdateUserStatus(id, request, authentication.getName());
     }
 
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
-    public User updateUser(@PathVariable Long id,
+    public UserResponse updateUser(@PathVariable Long id,
                            @RequestBody UpdateUserRequest request) {
         return userService.updateUser(id, request);
     }

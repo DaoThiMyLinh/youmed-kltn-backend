@@ -32,7 +32,6 @@ public class SpecialtyServiceImplTest {
         request = new SpecialtyRequest();
         request.setName("tim mạch");
         request.setDescription("Mo ta tim mach");
-        request.setImageUrl("url");
         request.setActive(true);
     }
 
@@ -45,7 +44,6 @@ public class SpecialtyServiceImplTest {
                 .id(1L)
                 .name("Tim Mạch")
                 .description(request.getDescription())
-                .imageUrl(request.getImageUrl())
                 .active(request.getActive())
                 .build();
                 

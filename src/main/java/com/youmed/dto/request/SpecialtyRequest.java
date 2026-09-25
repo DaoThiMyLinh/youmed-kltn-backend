@@ -13,8 +13,6 @@ public class SpecialtyRequest {
 
     private String description;
 
-    private String imageUrl;
-
     private Boolean active;
 
     private Long managerId;

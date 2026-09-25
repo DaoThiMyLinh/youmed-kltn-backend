@@ -50,6 +50,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 User user = userRepository.findByEmail(email)
                         .orElseThrow();
 
+                if (!user.getEnabled()) {
+                    throw new RuntimeException("Account is locked");
+                }
+
                 if (jwtService.isTokenValid(token, user)) {
 
                     UsernamePasswordAuthenticationToken authentication =

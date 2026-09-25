@@ -48,7 +48,6 @@ public class SpecialtyServiceImpl implements SpecialtyService {
         Specialty specialty = Specialty.builder()
                 .name(normalizedName)
                 .description(request.getDescription())
-                .imageUrl(request.getImageUrl())
                 .manager(manager)
                 .active(request.getActive() != null ? request.getActive() : true)
                 .build();
@@ -69,7 +68,6 @@ public class SpecialtyServiceImpl implements SpecialtyService {
         
         specialty.setName(normalizedName);
         specialty.setDescription(request.getDescription());
-        specialty.setImageUrl(request.getImageUrl());
         
         if (request.getActive() != null) {
             specialty.setActive(request.getActive());
@@ -133,7 +131,6 @@ public class SpecialtyServiceImpl implements SpecialtyService {
                 .id(specialty.getId())
                 .name(specialty.getName())
                 .description(specialty.getDescription())
-                .imageUrl(specialty.getImageUrl())
                 .active(specialty.getActive())
                 .managerId(specialty.getManager() != null ? specialty.getManager().getId() : null)
                 .managerName(specialty.getManager() != null ? specialty.getManager().getFullName() : null)
