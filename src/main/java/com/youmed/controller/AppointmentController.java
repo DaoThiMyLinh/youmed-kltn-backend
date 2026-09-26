@@ -100,4 +100,51 @@ public class AppointmentController {
         );
     }
 
+    // RECEPTIONIST/ADMIN xem tất cả lịch khám
+    @GetMapping
+    @PreAuthorize("hasAnyRole('RECEPTIONIST', 'ADMIN')")
+    public ResponseEntity<Page<AppointmentResponse>> getAllAppointments(
+            @RequestParam(required = false) String status,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "id") String sortBy,
+            @RequestParam(defaultValue = "DESC") String sortDir
+    ) {
+        return ResponseEntity.ok(
+                appointmentService.getAllAppointments(status, page, size, sortBy, sortDir)
+        );
+    }
+
+    // RECEPTIONIST/ADMIN tạo lịch khám cho bệnh nhân
+    @PostMapping("/patient/{patientId}")
+    @PreAuthorize("hasAnyRole('RECEPTIONIST', 'ADMIN')")
+    public ResponseEntity<AppointmentResponse> createAppointmentForPatient(
+            @PathVariable Long patientId,
+            @Valid @RequestBody CreateAppointmentRequest request
+    ) {
+        return ResponseEntity.ok(
+                appointmentService.createAppointmentForPatient(request, patientId)
+        );
+    }
+
+    // RECEPTIONIST check-in cho bệnh nhân
+    @PutMapping("/{id}/check-in")
+    @PreAuthorize("hasRole('RECEPTIONIST')")
+    public ResponseEntity<AppointmentResponse> checkInPatient(
+            @PathVariable Long id
+    ) {
+        return ResponseEntity.ok(
+                appointmentService.checkInPatient(id)
+        );
+    }
+    // RECEPTIONIST xác nhận lịch khám
+    @PutMapping("/{id}/confirm")
+    @PreAuthorize("hasRole('RECEPTIONIST')")
+    public ResponseEntity<AppointmentResponse> confirmAppointment(
+            @PathVariable Long id
+    ) {
+        return ResponseEntity.ok(
+                appointmentService.confirmAppointment(id)
+        );
+    }
 }

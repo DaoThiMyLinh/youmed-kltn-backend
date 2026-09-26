@@ -33,4 +33,20 @@ public interface AppointmentService {
 
     AppointmentResponse cancelAppointment(Long appointmentId);
 
+    Page<AppointmentResponse> getAllAppointments(
+            String status,
+            int page,
+            int size,
+            String sortBy,
+            String sortDir
+    );
+
+    AppointmentResponse createAppointmentForPatient(
+            CreateAppointmentRequest request,
+            Long patientId
+    );
+
+    AppointmentResponse checkInPatient(Long appointmentId);
+
+    AppointmentResponse confirmAppointment(Long appointmentId);
 }

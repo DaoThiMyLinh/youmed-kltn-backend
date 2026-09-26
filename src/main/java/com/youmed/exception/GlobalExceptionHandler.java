@@ -144,11 +144,16 @@ public class GlobalExceptionHandler {
             HttpServletRequest request
     ) {
 
+        String message = ex.getMessage();
+        if (ex instanceof org.springframework.security.authentication.BadCredentialsException) {
+            message = "Email hoặc mật khẩu không chính xác";
+        }
+
         ErrorResponse response = ErrorResponse.builder()
                 .timestamp(LocalDateTime.now())
                 .status(HttpStatus.UNAUTHORIZED.value())
                 .error(HttpStatus.UNAUTHORIZED.getReasonPhrase())
-                .message("Unauthorized: " + ex.getMessage())
+                .message(message)
                 .path(request.getRequestURI())
                 .build();
 

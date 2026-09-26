@@ -5,6 +5,7 @@ import jakarta.persistence.*;
 import lombok.*;
 
 
+@com.fasterxml.jackson.annotation.JsonIgnoreProperties({"hibernateLazyInitializer", "handler"}) 
 @Entity
 @Table(name = "doctors")
 @Getter

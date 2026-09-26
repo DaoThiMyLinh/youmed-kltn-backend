@@ -43,6 +43,10 @@ public class AppointmentServiceImpl implements AppointmentService {
 
     private final TimeSlotRepository timeSlotRepository;
 
+    private final com.youmed.service.InvoiceService invoiceService;
+    
+    private final com.youmed.repository.InvoiceRepository invoiceRepository;
+
     private final JdbcTemplate jdbcTemplate;
 
     @PostConstruct
@@ -278,12 +282,136 @@ public class AppointmentServiceImpl implements AppointmentService {
         return mapToResponse(appointment);
     }
 
+    @Override
+    public Page<AppointmentResponse> getAllAppointments(String status, int page, int size, String sortBy, String sortDir) {
+        Sort sort = sortDir.equalsIgnoreCase(Sort.Direction.ASC.name()) ? Sort.by(sortBy).ascending() : Sort.by(sortBy).descending();
+        Pageable pageable = PageRequest.of(page, size, sort);
+
+        if (status == null || status.trim().isEmpty()) {
+            return appointmentRepository.findAll(pageable).map(this::mapToResponse);
+        }
+
+        try {
+            AppointmentStatus appointmentStatus = AppointmentStatus.valueOf(status.trim().toUpperCase());
+            return appointmentRepository.findByStatus(appointmentStatus, pageable).map(this::mapToResponse);
+        } catch (IllegalArgumentException e) {
+            return Page.empty(pageable);
+        }
+    }
+
+    @Override
+    @Transactional
+    public AppointmentResponse createAppointmentForPatient(CreateAppointmentRequest request, Long patientId) {
+        User patient = userRepository.findById(patientId)
+                .orElseThrow(() -> new ResourceNotFoundException("Patient not found"));
+
+        TimeSlot timeSlot = timeSlotRepository.findById(request.getTimeSlotId())
+                .orElseThrow(() -> new ResourceNotFoundException("Time slot not found"));
+
+        if (Boolean.TRUE.equals(timeSlot.getBooked())) {
+            throw new DuplicateResourceException("Slot already booked");
+        }
+
+        if (timeSlot.getStartDateTime().isBefore(LocalDateTime.now().plusMinutes(30))) {
+            throw new BadRequestException("Appointment must be booked at least 30 minutes in advance");
+        }
+
+        Doctor doctor = timeSlot.getDoctorSchedule().getDoctor();
+
+        if (!Boolean.TRUE.equals(timeSlot.getActive())) {
+            throw new BadRequestException("Time slot is inactive");
+        }
+
+        if (!Boolean.TRUE.equals(timeSlot.getDoctorSchedule().getActive())) {
+            throw new BadRequestException("Doctor schedule is inactive");
+        }
+
+        if (timeSlot.getDoctorSchedule().getStatus() != com.youmed.enums.ScheduleStatus.APPROVED) {
+            throw new BadRequestException("Doctor schedule is not approved");
+        }
+
+        if (!Boolean.TRUE.equals(doctor.getActive())) {
+            throw new BadRequestException("Doctor is inactive");
+        }
+
+        if (appointmentRepository.existsByPatientIdAndTimeSlotStartDateTimeAndStatusNot(
+                patient.getId(),
+                timeSlot.getStartDateTime(),
+                AppointmentStatus.CANCELLED)) {
+            throw new BadRequestException("Patient already has an appointment at this time");
+        }
+
+        Appointment appointment = Appointment.builder()
+                .patient(patient)
+                .doctor(doctor)
+                .timeSlot(timeSlot)
+                .appointmentTime(timeSlot.getStartDateTime())
+                .reason(request.getReason())
+                .status(AppointmentStatus.CONFIRMED)
+                .build();
+
+        appointment = appointmentRepository.save(appointment);
+
+        timeSlot.setBooked(true);
+        timeSlot.setAppointment(appointment);
+        timeSlotRepository.save(timeSlot);
+
+        return mapToResponse(appointment);
+    }
+
+    @Override
+    @Transactional
+    public AppointmentResponse checkInPatient(Long appointmentId) {
+        Appointment appointment = appointmentRepository.findById(appointmentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Appointment not found"));
+
+        if (appointment.getStatus() != AppointmentStatus.PENDING && appointment.getStatus() != AppointmentStatus.CONFIRMED) {
+            throw new BadRequestException("Can only check in PENDING or CONFIRMED appointments");
+        }
+
+        appointment.setStatus(AppointmentStatus.CHECKED_IN);
+        appointmentRepository.save(appointment);
+
+        // Auto-generate consultation fee invoice if not exists
+        if (invoiceRepository.findByAppointmentId(appointmentId).isEmpty()) {
+            Double fee = appointment.getDoctor().getConsultationFee();
+            if (fee == null) {
+                fee = 150000.0; // Default consultation fee
+            }
+            invoiceService.createInvoice(
+                    appointment.getPatient().getId(),
+                    appointment.getId(),
+                    java.math.BigDecimal.valueOf(fee),
+                    com.youmed.enums.InvoiceType.CONSULTATION,
+                    "Phí khám bệnh ban đầu"
+            );
+        }
+
+        return mapToResponse(appointment);
+    }
+    @Override
+    public AppointmentResponse confirmAppointment(Long appointmentId) {
+        Appointment appointment = appointmentRepository.findById(appointmentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Appointment not found"));
+
+        if (appointment.getStatus() != AppointmentStatus.PENDING) {
+            throw new BadRequestException("Can only confirm PENDING appointments");
+        }
+
+        appointment.setStatus(AppointmentStatus.CONFIRMED);
+        appointment = appointmentRepository.save(appointment);
+
+        return mapToResponse(appointment);
+    }
+
     private AppointmentResponse mapToResponse(Appointment appointment) {
 
         return AppointmentResponse.builder()
                 .id(appointment.getId())
                 .patientId(appointment.getPatient().getId())
                 .patientName(appointment.getPatient().getFullName())
+                .patientPhone(appointment.getPatient().getPhone())
+                .patientGender(appointment.getPatient().getGender())
                 .doctorId(appointment.getDoctor().getId())
                 .doctorName(appointment.getDoctor().getUser().getFullName())
                 .specialization(appointment.getDoctor().getSpecialty() != null ? appointment.getDoctor().getSpecialty().getName() : null)

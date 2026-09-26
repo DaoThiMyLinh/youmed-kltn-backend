@@ -5,6 +5,7 @@ import lombok.*;
 
 import java.time.LocalDateTime;
 
+@com.fasterxml.jackson.annotation.JsonIgnoreProperties({"hibernateLazyInitializer", "handler"}) 
 @Entity
 @Table(name = "time_slots", uniqueConstraints = {
         @UniqueConstraint(columnNames = {"doctor_schedule_id", "start_date_time"})

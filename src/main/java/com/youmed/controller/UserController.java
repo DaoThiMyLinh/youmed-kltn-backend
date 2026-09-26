@@ -32,7 +32,7 @@ public class UserController {
     }
 
     @GetMapping("/patients")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'RECEPTIONIST')")
     public org.springframework.data.domain.Page<UserResponse> getPatients(
             @RequestParam(required = false) String keyword,
             @RequestParam(defaultValue = "0") int page,
@@ -44,7 +44,7 @@ public class UserController {
     }
 
     @GetMapping("/patients/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'RECEPTIONIST')")
     public UserResponse getPatientById(@PathVariable Long id) {
         return userService.getPatientById(id);
     }

@@ -1,0 +1,2 @@
+TOKEN=$(curl -s -X POST http://localhost:8080/api/auth/login -H "Content-Type: application/json" -d '{"email":"admin@gmail.com","password":"admin123"}' | grep -o '"token":"[^"]*' | cut -d'"' -f4)
+curl -s -X POST http://localhost:8080/api/doctor-schedules/range -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"startDate":"2026-09-27","endDate":"2026-09-27","startTime":"13:30","endTime":"16:30","doctorId":1}'
