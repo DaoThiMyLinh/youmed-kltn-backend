@@ -20,9 +20,17 @@ import org.springframework.data.domain.Sort;
 import com.youmed.repository.UserRepository;
 import com.youmed.entity.User;
 import com.youmed.enums.Role;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import com.youmed.repository.AppointmentRepository;
+import com.youmed.repository.DoctorScheduleRepository;
+import com.youmed.repository.TimeSlotRepository;
+import com.youmed.entity.DoctorSchedule;
+import com.youmed.entity.TimeSlot;
+import com.youmed.exception.BadRequestException;
 import com.youmed.exception.ResourceNotFoundException;
 import com.youmed.exception.DuplicateResourceException;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
@@ -31,29 +39,18 @@ public class DoctorServiceImpl implements DoctorService {
     private final DoctorRepository doctorRepository;
     private final UserRepository userRepository;
     private final SpecialtyRepository specialtyRepository;
+    private final AppointmentRepository appointmentRepository;
+    private final DoctorScheduleRepository doctorScheduleRepository;
+    private final TimeSlotRepository timeSlotRepository;
     private final PasswordEncoder passwordEncoder;
+
+    @Value("${app.user.default-password:123456}")
+    private String defaultPassword;
 
     @Override
     public DoctorResponse createDoctor(DoctorCreateRequest request) {
 
-        User user = userRepository.findByEmail(request.getEmail()).orElse(null);
-        if (user != null) {
-            if (user.getRole() == Role.DOCTOR) {
-                throw new DuplicateResourceException("Doctor email already exists");
-            }
-            user.setRole(Role.DOCTOR);
-            user.setFullName(request.getFullName());
-            user.setPhone(request.getPhone());
-        } else {
-            user = User.builder()
-                    .fullName(request.getFullName())
-                    .email(request.getEmail())
-                    .phone(request.getPhone())
-                    .password(passwordEncoder.encode("bs123"))
-                    .role(Role.DOCTOR)
-                    .build();
-        }
-        user = userRepository.save(user);
+        Role targetRole = (request.getRole() == Role.DEPARTMENT_MANAGER) ? Role.DEPARTMENT_MANAGER : Role.DOCTOR;
 
         Specialty specialty = null;
         if (request.getSpecialtyId() != null) {
@@ -61,13 +58,64 @@ public class DoctorServiceImpl implements DoctorService {
                     .orElseThrow(() -> new ResourceNotFoundException("Specialty not found"));
         }
 
-        Doctor doctor = Doctor.builder()
-                .user(user)
-                .specialty(specialty)
-                .consultationFee(request.getConsultationFee())
-                .biography(request.getBiography())
-                .active(true)
-                .build();
+        if (targetRole == Role.DEPARTMENT_MANAGER) {
+            if (specialty == null) {
+                throw new BadRequestException("Trưởng khoa bắt buộc phải được gắn với một chuyên khoa");
+            }
+            if (specialty.getManager() != null) {
+                User existingUser = userRepository.findByEmail(request.getEmail()).orElse(null);
+                if (existingUser == null || !specialty.getManager().getId().equals(existingUser.getId())) {
+                    throw new DuplicateResourceException("Chuyên khoa " + specialty.getName() + " đã có Trưởng khoa (" + specialty.getManager().getFullName() + "). Mỗi chuyên khoa chỉ được có 1 Trưởng khoa.");
+                }
+            }
+        }
+
+        User user = userRepository.findByEmail(request.getEmail()).orElse(null);
+        if (user != null) {
+            if (user.getRole() == targetRole) {
+                throw new DuplicateResourceException("Email đã tồn tại với vai trò này");
+            }
+            user.setRole(targetRole);
+            user.setFullName(request.getFullName());
+            user.setPhone(request.getPhone());
+        } else {
+            if (request.getPhone() != null && !request.getPhone().trim().isEmpty() && userRepository.existsByPhone(request.getPhone().trim())) {
+                throw new DuplicateResourceException("Số điện thoại đã tồn tại trong hệ thống");
+            }
+            user = User.builder()
+                    .fullName(request.getFullName())
+                    .email(request.getEmail())
+                    .phone(request.getPhone())
+                    .password(passwordEncoder.encode(defaultPassword))
+                    .role(targetRole)
+                    .build();
+        }
+        user = userRepository.save(user);
+
+        if (targetRole == Role.DEPARTMENT_MANAGER) {
+            specialty.setManager(user);
+            specialty = specialtyRepository.save(specialty);
+        }
+
+        Doctor doctor = doctorRepository.findByUserId(user.getId()).orElse(null);
+        if (doctor == null) {
+            doctor = Doctor.builder()
+                    .user(user)
+                    .specialty(specialty)
+                    .consultationFee(request.getConsultationFee() != null ? request.getConsultationFee() : 0.0)
+                    .biography(request.getBiography())
+                    .active(true)
+                    .build();
+        } else {
+            doctor.setSpecialty(specialty);
+            if (request.getConsultationFee() != null) {
+                doctor.setConsultationFee(request.getConsultationFee());
+            }
+            if (request.getBiography() != null) {
+                doctor.setBiography(request.getBiography());
+            }
+            doctor.setActive(true);
+        }
 
         return mapToResponse(
                 doctorRepository.save(doctor)
@@ -146,6 +194,22 @@ public class DoctorServiceImpl implements DoctorService {
         if (request.getSpecialtyId() != null) {
             Specialty specialty = specialtyRepository.findById(request.getSpecialtyId())
                     .orElseThrow(() -> new ResourceNotFoundException("Specialty not found"));
+
+            if (user.getRole() == Role.DEPARTMENT_MANAGER) {
+                if (specialty.getManager() != null && !specialty.getManager().getId().equals(user.getId())) {
+                    throw new DuplicateResourceException("Chuyên khoa " + specialty.getName() + " đã có Trưởng khoa (" + specialty.getManager().getFullName() + "). Mỗi chuyên khoa chỉ được có 1 Trưởng khoa.");
+                }
+                if (doctor.getSpecialty() != null && !doctor.getSpecialty().getId().equals(specialty.getId())) {
+                    Specialty oldSpecialty = doctor.getSpecialty();
+                    if (oldSpecialty.getManager() != null && oldSpecialty.getManager().getId().equals(user.getId())) {
+                        oldSpecialty.setManager(null);
+                        specialtyRepository.save(oldSpecialty);
+                    }
+                }
+                specialty.setManager(user);
+                specialtyRepository.save(specialty);
+            }
+
             doctor.setSpecialty(specialty);
         }
         
@@ -167,6 +231,7 @@ public class DoctorServiceImpl implements DoctorService {
 
 
     @Override
+    @Transactional
     public void deleteDoctor(Long id) {
 
         Doctor doctor = doctorRepository.findById(id)
@@ -174,7 +239,43 @@ public class DoctorServiceImpl implements DoctorService {
                         new ResourceNotFoundException("Doctor not found")
                 );
 
+        if (appointmentRepository.existsByDoctorId(doctor.getId())) {
+            throw new BadRequestException("Không thể xóa bác sĩ đã có lịch hẹn khám. Vui lòng sử dụng tính năng 'Tạm khóa' tài khoản thay vì xóa.");
+        }
+
+        User user = doctor.getUser();
+
+        if (user != null && appointmentRepository.existsByPatientId(user.getId())) {
+            throw new BadRequestException("Không thể xóa tài khoản do người dùng này có lịch sử đặt khám trong hệ thống. Vui lòng sử dụng tính năng 'Tạm khóa'.");
+        }
+
+        List<DoctorSchedule> schedules = doctorScheduleRepository.findByDoctorId(doctor.getId());
+        if (!schedules.isEmpty()) {
+            for (DoctorSchedule schedule : schedules) {
+                List<TimeSlot> slots = timeSlotRepository.findByDoctorScheduleId(schedule.getId());
+                if (!slots.isEmpty()) {
+                    timeSlotRepository.deleteAll(slots);
+                }
+            }
+            doctorScheduleRepository.deleteAll(schedules);
+        }
+
+        if (user != null) {
+            user.setDoctor(null);
+            specialtyRepository.findByManagerId(user.getId()).ifPresent(s -> {
+                s.setManager(null);
+                specialtyRepository.save(s);
+            });
+        }
+
+        doctor.setUser(null);
+        doctor.setSpecialty(null);
         doctorRepository.delete(doctor);
+        doctorRepository.flush();
+
+        if (user != null) {
+            userRepository.delete(user);
+        }
     }
 
 
@@ -200,6 +301,7 @@ public class DoctorServiceImpl implements DoctorService {
                 .email(doctor.getUser().getEmail())
                 .biography(doctor.getBiography())
                 .active(doctor.getActive())
+                .role(doctor.getUser() != null ? doctor.getUser().getRole() : null)
                 .createdAt(doctor.getCreatedAt())
                 .build();
     }

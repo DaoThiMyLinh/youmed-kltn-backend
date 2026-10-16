@@ -222,8 +222,16 @@ public class AppointmentServiceImpl implements AppointmentService {
 
         AppointmentStatus oldStatus = appointment.getStatus();
         AppointmentStatus newStatus = AppointmentStatus.valueOf(status);
-        appointment.setStatus(newStatus);
 
+        if (newStatus == AppointmentStatus.CHECKED_IN) {
+            throw new BadRequestException("Chỉ Lễ tân (RECEPTIONIST) mới có quyền tiếp nhận và Check-in bệnh nhân.");
+        }
+
+        if (newStatus == AppointmentStatus.IN_PROGRESS && oldStatus != AppointmentStatus.CHECKED_IN) {
+            throw new BadRequestException("Bệnh nhân cần được Lễ tân Check-in trước khi Bác sĩ bắt đầu khám.");
+        }
+
+        appointment.setStatus(newStatus);
         appointmentRepository.save(appointment);
         
         if (newStatus == AppointmentStatus.CANCELLED) {
@@ -401,6 +409,13 @@ public class AppointmentServiceImpl implements AppointmentService {
         appointment.setStatus(AppointmentStatus.CONFIRMED);
         appointment = appointmentRepository.save(appointment);
 
+        return mapToResponse(appointment);
+    }
+
+    @Override
+    public AppointmentResponse getAppointmentById(Long appointmentId) {
+        Appointment appointment = appointmentRepository.findById(appointmentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Appointment not found with ID: " + appointmentId));
         return mapToResponse(appointment);
     }
 

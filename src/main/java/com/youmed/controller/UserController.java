@@ -55,6 +55,12 @@ public class UserController {
         return userService.getUserById(id);
     }
 
+    @PostMapping
+    @PreAuthorize("hasRole('ADMIN')")
+    public UserResponse createUser(@jakarta.validation.Valid @RequestBody com.youmed.dto.request.AdminCreateUserRequest request) {
+        return userService.createUser(request);
+    }
+
     @PutMapping("/{id}/admin")
     @PreAuthorize("hasRole('ADMIN')")
     public UserResponse adminUpdateUserStatus(

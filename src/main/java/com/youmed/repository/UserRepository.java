@@ -17,6 +17,8 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     boolean existsByEmail(String email);
 
+    boolean existsByPhone(String phone);
+
     @org.springframework.data.jpa.repository.Query("SELECT u FROM User u WHERE " +
            "(:#{#role == null} = true OR u.role = :role) AND " +
            "(:#{#keyword == null} = true OR " +

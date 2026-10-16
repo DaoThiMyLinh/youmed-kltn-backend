@@ -24,7 +24,6 @@ public class DataMigrationComponent implements ApplicationRunner {
     }
 
     @Override
-    @Transactional
     public void run(ApplicationArguments args) {
         int inserted = 0;
         int updated = 0;

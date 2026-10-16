@@ -40,8 +40,8 @@ public class DatabaseSeeder implements ApplicationRunner {
     private final InvoiceRepository invoiceRepository;
 
     @Override
-    @Transactional
     public void run(ApplicationArguments args) {
+        syncDoctorRecordsForManagersAndDoctors();
         seedAll(false);
     }
 
@@ -237,6 +237,47 @@ public class DatabaseSeeder implements ApplicationRunner {
         map.put(email, user);
     }
 
+
+    private void syncDoctorRecordsForManagersAndDoctors() {
+        try {
+            List<User> doctorUsers = userRepository.findAll().stream()
+                    .filter(u -> u.getRole() == Role.DOCTOR || u.getRole() == Role.DEPARTMENT_MANAGER)
+                    .toList();
+
+            for (User user : doctorUsers) {
+                Doctor doc = doctorRepository.findByUserId(user.getId()).orElse(null);
+                if (doc == null) {
+                    Specialty specialty = specialtyRepository.findByManagerId(user.getId()).orElse(null);
+                    if (specialty == null) {
+                        if (user.getRole() == Role.DEPARTMENT_MANAGER) {
+                            specialty = specialtyRepository.findAll().stream()
+                                    .filter(s -> s.getManager() == null)
+                                    .findFirst()
+                                    .orElse(null);
+                            if (specialty != null) {
+                                specialty.setManager(user);
+                                specialtyRepository.save(specialty);
+                            }
+                        } else {
+                            specialty = specialtyRepository.findAll().stream().findFirst().orElse(null);
+                        }
+                    }
+                    doc = Doctor.builder()
+                            .user(user)
+                            .specialty(specialty)
+                            .consultationFee(user.getRole() == Role.DEPARTMENT_MANAGER ? 300000.0 : 250000.0)
+                            .biography((user.getRole() == Role.DEPARTMENT_MANAGER ? "Trưởng khoa" : "Bác sĩ") + " tại Bệnh viện YouMed")
+                            .active(user.getEnabled() != null ? user.getEnabled() : true)
+                            .build();
+                    doctorRepository.save(doc);
+                    log.info("Auto-synced missing Doctor record for user: {} (role: {})", user.getEmail(), user.getRole());
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to auto-sync doctor records: {}", e.getMessage());
+        }
+    }
+
     private void updateSpecialtyManagers(Map<String, User> userMap) {
         String[][] mappings = {
                 {"Nội khoa", "manager.noikhoa@youmed.com"},
@@ -257,6 +298,18 @@ public class DatabaseSeeder implements ApplicationRunner {
             if (specialty != null && manager != null) {
                 specialty.setManager(manager);
                 specialtyRepository.save(specialty);
+
+                Doctor doc = doctorRepository.findByUserId(manager.getId()).orElse(null);
+                if (doc == null) {
+                    doc = Doctor.builder()
+                            .user(manager)
+                            .specialty(specialty)
+                            .consultationFee(300000.0)
+                            .biography("Trưởng khoa " + specialty.getName() + " - Bác sĩ chuyên khoa tại Bệnh viện YouMed")
+                            .active(true)
+                            .build();
+                    doctorRepository.save(doc);
+                }
             }
         }
     }

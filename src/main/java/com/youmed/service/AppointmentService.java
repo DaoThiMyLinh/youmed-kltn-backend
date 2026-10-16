@@ -49,4 +49,6 @@ public interface AppointmentService {
     AppointmentResponse checkInPatient(Long appointmentId);
 
     AppointmentResponse confirmAppointment(Long appointmentId);
+
+    AppointmentResponse getAppointmentById(Long appointmentId);
 }
