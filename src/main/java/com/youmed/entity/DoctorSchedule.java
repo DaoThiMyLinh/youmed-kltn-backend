@@ -35,4 +35,12 @@ public class DoctorSchedule extends BaseEntity {
     @Column(nullable = false)
     @Builder.Default
     private Boolean active = true;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    @Builder.Default
+    private com.youmed.enums.ScheduleStatus status = com.youmed.enums.ScheduleStatus.PENDING;
+
+    @Column(columnDefinition = "TEXT")
+    private String rejectionReason;
 }

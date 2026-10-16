@@ -8,11 +8,15 @@ import java.util.Optional;
 
 public interface UserService {
 
-    List<User> getAllUsers();
+    org.springframework.data.domain.Page<com.youmed.dto.response.UserResponse> getAllUsers(String keyword, String role, int page, int size, String sortBy, String sortDir);
 
-    Optional<User> getUserById(Long id);
+    com.youmed.dto.response.UserResponse getUserById(Long id);
 
-    User updateUser(Long id, UpdateUserRequest request);
+    com.youmed.dto.response.UserResponse getPatientById(Long id);
+
+    com.youmed.dto.response.UserResponse adminUpdateUserStatus(Long id, com.youmed.dto.request.AdminUpdateUserRequest request, String adminEmail);
+
+    com.youmed.dto.response.UserResponse updateUser(Long id, UpdateUserRequest request);
 
     void deleteUser(Long id);
 
@@ -21,4 +25,6 @@ public interface UserService {
     com.youmed.dto.response.UserResponse updateCurrentUser(String email, UpdateUserRequest request);
 
     void changePassword(String email, com.youmed.dto.request.ChangePasswordRequest request);
+
+    com.youmed.dto.response.UserResponse createUser(com.youmed.dto.request.AdminCreateUserRequest request);
 }

@@ -36,13 +36,13 @@ public class DoctorScheduleController {
         return doctorScheduleService.createScheduleRange(request);
     }
 
-    @GetMapping("/doctor-schedules/doctor/{doctorId}")
+    @GetMapping("/doctor-schedules/doctor/{doctorId:\\d+}")
     @PreAuthorize("hasAnyRole('ADMIN', 'DOCTOR')")
     public List<DoctorScheduleResponse> getSchedulesByDoctor(@PathVariable Long doctorId) {
         return doctorScheduleService.getSchedulesByDoctor(doctorId);
     }
 
-    @DeleteMapping("/doctor-schedules/{id}")
+    @DeleteMapping("/doctor-schedules/{id:\\d+}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasAnyRole('ADMIN', 'DOCTOR')")
     public void deleteSchedule(@PathVariable Long id) {

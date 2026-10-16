@@ -98,7 +98,7 @@ public class GlobalExceptionHandler {
                 .timestamp(LocalDateTime.now())
                 .status(HttpStatus.FORBIDDEN.value())
                 .error(HttpStatus.FORBIDDEN.getReasonPhrase())
-                .message("Access denied")
+                .message(ex.getMessage() != null && !ex.getMessage().equals("Access is denied") ? ex.getMessage() : "Access denied")
                 .path(request.getRequestURI())
                 .build();
 
@@ -122,17 +122,38 @@ public class GlobalExceptionHandler {
         return ResponseEntity.badRequest().body(response);
     }
 
+    @ExceptionHandler(org.springframework.security.authentication.DisabledException.class)
+    public ResponseEntity<ErrorResponse> handleDisabledException(
+            org.springframework.security.authentication.DisabledException ex,
+            HttpServletRequest request
+    ) {
+        ErrorResponse response = ErrorResponse.builder()
+                .timestamp(LocalDateTime.now())
+                .status(HttpStatus.UNAUTHORIZED.value())
+                .error(HttpStatus.UNAUTHORIZED.getReasonPhrase())
+                .message("Tài khoản của bạn đã bị khóa. Vui lòng liên hệ Admin.")
+                .path(request.getRequestURI())
+                .build();
+
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response);
+    }
+
     @ExceptionHandler(AuthenticationException.class)
     public ResponseEntity<ErrorResponse> handleAuthenticationException(
             AuthenticationException ex,
             HttpServletRequest request
     ) {
 
+        String message = ex.getMessage();
+        if (ex instanceof org.springframework.security.authentication.BadCredentialsException) {
+            message = "Email hoặc mật khẩu không chính xác";
+        }
+
         ErrorResponse response = ErrorResponse.builder()
                 .timestamp(LocalDateTime.now())
                 .status(HttpStatus.UNAUTHORIZED.value())
                 .error(HttpStatus.UNAUTHORIZED.getReasonPhrase())
-                .message("Unauthorized: " + ex.getMessage())
+                .message(message)
                 .path(request.getRequestURI())
                 .build();
 

@@ -22,6 +22,10 @@ public class AppointmentResponse {
 
 
     private String patientName;
+    
+    private String patientPhone;
+    
+    private String patientGender;
 
 
 

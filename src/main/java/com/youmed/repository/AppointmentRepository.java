@@ -32,6 +32,10 @@ public interface AppointmentRepository
             Pageable pageable
     );
 
+    boolean existsByDoctorId(Long doctorId);
+
+    boolean existsByPatientId(Long patientId);
+
     boolean existsByDoctorIdAndTimeSlotStartDateTime(
             Long doctorId,
             LocalDateTime startDateTime
@@ -41,6 +45,11 @@ public interface AppointmentRepository
             Long patientId,
             LocalDateTime startDateTime,
             AppointmentStatus status
+    );
+
+    Page<Appointment> findByStatus(
+            AppointmentStatus status,
+            Pageable pageable
     );
 
 }

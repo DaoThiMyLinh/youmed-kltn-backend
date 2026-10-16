@@ -23,4 +23,6 @@ public class DoctorCreateRequest {
     private String email;
 
     private String biography;
+
+    private com.youmed.enums.Role role;
 }

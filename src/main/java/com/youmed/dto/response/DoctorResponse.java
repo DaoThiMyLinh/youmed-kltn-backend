@@ -24,5 +24,7 @@ public class DoctorResponse {
 
     private Boolean active;
 
+    private com.youmed.enums.Role role;
+
     private LocalDateTime createdAt;
 }
