@@ -3,6 +3,7 @@ package com.youmed.entity;
 import jakarta.persistence.*;
 import lombok.*;
 
+@com.fasterxml.jackson.annotation.JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 @Entity
 @Table(name = "medical_records")
 @Getter
@@ -33,4 +34,18 @@ public class MedicalRecord extends BaseEntity {
     @Column(columnDefinition = "TEXT")
     private String notes;
 
+    @Column(name = "follow_up_date")
+    private java.time.LocalDate followUpDate;
+
+    @Column(name = "referral_target")
+    private String referralTarget;
+
+    @Column(name = "referral_services", columnDefinition = "TEXT")
+    private String referralServices;
+
+    @Column(name = "referral_reason", columnDefinition = "TEXT")
+    private String referralReason;
+
+    @Column(name = "referral_notes", columnDefinition = "TEXT")
+    private String referralNotes;
 }

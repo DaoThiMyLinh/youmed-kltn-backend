@@ -583,11 +583,14 @@ public class DatabaseSeeder implements ApplicationRunner {
                 String specName = (app.getDoctor().getSpecialty() != null) ? app.getDoctor().getSpecialty().getName() : "Nội khoa";
                 String[] info = medicalInfoMap.getOrDefault(specName, medicalInfoMap.get("Nội khoa"));
 
+                LocalDate followUpDate = (app.getId() % 5 != 0) ? app.getAppointmentTime().toLocalDate().plusDays((app.getId() % 3 == 0) ? 7 : ((app.getId() % 3 == 1) ? 14 : 30)) : null;
+
                 MedicalRecord record = MedicalRecord.builder()
                         .appointment(app)
                         .diagnosis(info[0])
                         .symptoms(info[1])
                         .notes(info[2])
+                        .followUpDate(followUpDate)
                         .build();
                 record = medicalRecordRepository.save(record);
 
