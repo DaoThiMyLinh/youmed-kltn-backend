@@ -15,4 +15,6 @@ public interface SpecialtyRepository extends JpaRepository<Specialty, Long> {
     boolean existsByManagerId(Long managerId);
     boolean existsByManagerIdAndIdNot(Long managerId, Long id);
     java.util.Optional<Specialty> findByManagerId(Long managerId);
+    java.util.Optional<Specialty> findByName(String name);
+    java.util.Optional<Specialty> findByNameIgnoreCase(String name);
 }

@@ -21,4 +21,8 @@ public class Symptom extends BaseEntity {
 
     @Column(columnDefinition = "TEXT")
     private String description;
+
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "specialty_id")
+    private Specialty specialty;
 }

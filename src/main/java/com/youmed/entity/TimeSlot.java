@@ -42,6 +42,7 @@ public class TimeSlot extends BaseEntity {
     @Version
     private Long version;
 
+    @com.fasterxml.jackson.annotation.JsonIgnore
     @OneToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "appointment_id")
     private Appointment appointment;

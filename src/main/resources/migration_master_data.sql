@@ -84,7 +84,7 @@ INSERT INTO medicines (name, description, unit, category_id, created_at, updated
 -- Sát khuẩn, nhỏ mắt
 ('V.Rohto', 'Thuốc nhỏ mắt giảm mỏi, ngứa', 'Chai', (SELECT id FROM medicine_categories WHERE name = 'Dung dịch sát khuẩn, nhỏ mắt'), NOW(), NOW()),
 ('Natri Clorid 0.9%', 'Nước muối sinh lý nhỏ mắt, mũi', 'Chai', (SELECT id FROM medicine_categories WHERE name = 'Dung dịch sát khuẩn, nhỏ mắt'), NOW(), NOW()),
-('Povidine 10%', 'Dung dịch sát khuẩn vết thương', 'Chai', (SELECT id FROM medicine_categories thực tế thuộc loại: 'Dung dịch sát khuẩn, nhỏ mắt'), NOW(), NOW())
+('Povidine 10%', 'Dung dịch sát khuẩn vết thương', 'Chai', (SELECT id FROM medicine_categories WHERE name = 'Dung dịch sát khuẩn, nhỏ mắt'), NOW(), NOW())
 ON CONFLICT (name) DO NOTHING;
 
 -- Insert Symptoms

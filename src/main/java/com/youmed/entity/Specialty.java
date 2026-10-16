@@ -3,6 +3,7 @@ package com.youmed.entity;
 import jakarta.persistence.*;
 import lombok.*;
 
+@com.fasterxml.jackson.annotation.JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 @Entity
 @Table(name = "specialties")
 @Getter

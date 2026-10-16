@@ -29,6 +29,7 @@ public class User extends BaseEntity {
     private String email;
 
 
+    @com.fasterxml.jackson.annotation.JsonIgnore
     @Column(nullable = false, length = 255)
     private String password;
 
@@ -54,6 +55,7 @@ public class User extends BaseEntity {
     @Builder.Default
     private Boolean enabled = true;
 
+    @com.fasterxml.jackson.annotation.JsonIgnore
     @OneToOne(mappedBy = "user")
     private Doctor doctor;
 

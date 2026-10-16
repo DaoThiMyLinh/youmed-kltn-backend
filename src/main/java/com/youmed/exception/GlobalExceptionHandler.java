@@ -98,7 +98,7 @@ public class GlobalExceptionHandler {
                 .timestamp(LocalDateTime.now())
                 .status(HttpStatus.FORBIDDEN.value())
                 .error(HttpStatus.FORBIDDEN.getReasonPhrase())
-                .message("Access denied")
+                .message(ex.getMessage() != null && !ex.getMessage().equals("Access is denied") ? ex.getMessage() : "Access denied")
                 .path(request.getRequestURI())
                 .build();
 

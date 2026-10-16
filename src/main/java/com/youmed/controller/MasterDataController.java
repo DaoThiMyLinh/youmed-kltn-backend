@@ -30,6 +30,7 @@ public class MasterDataController {
     private final MedicineRepository medicineRepository;
     private final SymptomRepository symptomRepository;
     private final DiagnosisRepository diagnosisRepository;
+    private final com.youmed.config.DatabaseSeeder databaseSeeder;
 
     @GetMapping("/medicine-categories")
     @Operation(summary = "Get all medicine categories")
@@ -48,14 +49,30 @@ public class MasterDataController {
     }
 
     @GetMapping("/symptoms")
-    @Operation(summary = "Get all symptoms")
-    public ResponseEntity<List<Symptom>> getAllSymptoms() {
+    @Operation(summary = "Get all symptoms or filter by specialty")
+    public ResponseEntity<List<Symptom>> getAllSymptoms(
+            @RequestParam(required = false) Long specialtyId) {
+        if (specialtyId != null) {
+            return ResponseEntity.ok(symptomRepository.findBySpecialtyId(specialtyId));
+        }
         return ResponseEntity.ok(symptomRepository.findAll());
     }
 
     @GetMapping("/diagnoses")
-    @Operation(summary = "Get all diagnoses")
-    public ResponseEntity<List<Diagnosis>> getAllDiagnoses() {
+    @Operation(summary = "Get all diagnoses or filter by specialty")
+    public ResponseEntity<List<Diagnosis>> getAllDiagnoses(
+            @RequestParam(required = false) Long specialtyId) {
+        if (specialtyId != null) {
+            return ResponseEntity.ok(diagnosisRepository.findBySpecialtyId(specialtyId));
+        }
         return ResponseEntity.ok(diagnosisRepository.findAll());
+    }
+
+    @org.springframework.web.bind.annotation.PostMapping("/seed")
+    @Operation(summary = "Trigger full database seeding manually")
+    public ResponseEntity<java.util.Map<String, String>> triggerSeeding(
+            @RequestParam(defaultValue = "false") boolean force) {
+        databaseSeeder.seedAll(force);
+        return ResponseEntity.ok(java.util.Collections.singletonMap("message", "Database seeding completed successfully!"));
     }
 }
