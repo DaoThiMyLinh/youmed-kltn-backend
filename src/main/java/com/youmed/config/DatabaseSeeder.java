@@ -38,11 +38,13 @@ public class DatabaseSeeder implements ApplicationRunner {
     private final MedicalRecordRepository medicalRecordRepository;
     private final PrescriptionRepository prescriptionRepository;
     private final InvoiceRepository invoiceRepository;
+    private final DoctorReviewRepository doctorReviewRepository;
 
     @Override
     public void run(ApplicationArguments args) {
         syncDoctorRecordsForManagersAndDoctors();
         seedAll(false);
+        seedReviewsIfEmpty();
     }
 
     @Transactional
@@ -763,6 +765,61 @@ public class DatabaseSeeder implements ApplicationRunner {
             stmt.execute("UPDATE prescriptions p SET created_at = mr.created_at FROM medical_records mr WHERE p.medical_record_id = mr.id;");
         } catch (Exception e) {
             log.warn("Could not align entity timestamps: {}", e.getMessage());
+        }
+    }
+
+    private void seedReviewsIfEmpty() {
+        try {
+            if (doctorReviewRepository.count() > 0) {
+                return;
+            }
+            List<Appointment> completedAppointments = appointmentRepository.findAll().stream()
+                    .filter(a -> a.getStatus() == AppointmentStatus.COMPLETED)
+                    .toList();
+
+            if (completedAppointments.isEmpty()) {
+                return;
+            }
+
+            String[] positiveComments = {
+                    "Bác sĩ khám rất tận tâm, giải thích bệnh tình rõ ràng, dặn dò chu đáo.",
+                    "Bác sĩ chuyên môn cao, hỏi bệnh kỹ lưỡng và kê đơn thuốc rất hiệu quả.",
+                    "Bác sĩ rất thân thiện, nhẹ nhàng với bệnh nhân, tư vấn cặn kẽ.",
+                    "Bác sĩ chẩn đoán chính xác, uống thuốc 2 ngày đã thấy đỡ nhiều.",
+                    "Bác sĩ nhiệt tình, hướng dẫn chế độ ăn uống và sinh hoạt rất chi tiết.",
+                    "Khám nhanh chóng, không phải chờ đợi lâu, bác sĩ rất có tâm.",
+                    "Bác sĩ tư vấn rất kỹ, giải đáp mọi thắc mắc của người bệnh.",
+                    "Trải nghiệm khám bệnh rất hài lòng, bác sĩ chu đáo và ân cần.",
+                    "Bác sĩ chu đáo, phòng khám chuyên nghiệp và hiện đại.",
+                    "Rất an tâm khi được bác sĩ thăm khám và điều trị."
+            };
+
+            Random rand = new Random(123);
+            int seededCount = 0;
+
+            for (Appointment app : completedAppointments) {
+                if (rand.nextDouble() < 0.65) {
+                    int ratingRoll = rand.nextInt(10);
+                    int rating = (ratingRoll < 6) ? 5 : ((ratingRoll < 9) ? 4 : 3);
+                    String comment = (rand.nextBoolean() || rand.nextBoolean())
+                            ? positiveComments[rand.nextInt(positiveComments.length)]
+                            : null;
+
+                    DoctorReview review = DoctorReview.builder()
+                            .appointment(app)
+                            .patient(app.getPatient())
+                            .doctor(app.getDoctor())
+                            .rating(rating)
+                            .comment(comment)
+                            .build();
+
+                    doctorReviewRepository.save(review);
+                    seededCount++;
+                }
+            }
+            log.info("Successfully seeded {} realistic doctor reviews for completed appointments.", seededCount);
+        } catch (Exception e) {
+            log.warn("Failed to seed reviews: {}", e.getMessage());
         }
     }
 }

@@ -21,6 +21,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 public class DoctorController {
 
     private final DoctorService doctorService;
+    private final com.youmed.service.DoctorReviewService doctorReviewService;
 
 
     @PostMapping
@@ -63,6 +64,22 @@ public class DoctorController {
     ){
 
         return doctorService.getDoctorById(id);
+    }
+
+    @GetMapping("/{id}/reviews")
+    public Page<com.youmed.dto.response.DoctorReviewResponse> getDoctorReviews(
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size
+    ) {
+        return doctorReviewService.getReviewsByDoctorId(id, page, size);
+    }
+
+    @GetMapping("/{id}/rating-summary")
+    public com.youmed.dto.response.DoctorRatingSummaryResponse getDoctorRatingSummary(
+            @PathVariable Long id
+    ) {
+        return doctorReviewService.getDoctorRatingSummary(id);
     }
 
 

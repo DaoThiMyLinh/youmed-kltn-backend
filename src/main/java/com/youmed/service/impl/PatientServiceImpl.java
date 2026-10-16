@@ -35,6 +35,7 @@ public class PatientServiceImpl implements PatientService {
     private final MedicalRecordRepository medicalRecordRepository;
     private final PrescriptionRepository prescriptionRepository;
     private final UserRepository userRepository;
+    private final com.youmed.repository.DoctorReviewRepository doctorReviewRepository;
 
     @Override
     @Transactional(readOnly = true)
@@ -64,6 +65,19 @@ public class PatientServiceImpl implements PatientService {
     }
 
     private PatientHistoryResponse mapToHistoryResponse(Appointment appointment) {
+        Boolean hasReviewed = false;
+        Integer reviewRating = null;
+        Long reviewId = null;
+
+        if (appointment.getStatus() == com.youmed.enums.AppointmentStatus.COMPLETED) {
+            var reviewOpt = doctorReviewRepository.findByAppointmentId(appointment.getId());
+            if (reviewOpt.isPresent()) {
+                hasReviewed = true;
+                reviewRating = reviewOpt.get().getRating();
+                reviewId = reviewOpt.get().getId();
+            }
+        }
+
         // Map Appointment
         AppointmentResponse appointmentResponse = AppointmentResponse.builder()
                 .id(appointment.getId())
@@ -76,6 +90,9 @@ public class PatientServiceImpl implements PatientService {
                 .reason(appointment.getReason())
                 .status(appointment.getStatus())
                 .createdAt(appointment.getCreatedAt())
+                .hasReviewed(hasReviewed)
+                .reviewRating(reviewRating)
+                .reviewId(reviewId)
                 .build();
 
         MedicalRecordResponse medicalRecordResponse = null;
