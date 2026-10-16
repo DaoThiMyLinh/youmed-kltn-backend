@@ -27,4 +27,6 @@ public class DoctorResponse {
     private com.youmed.enums.Role role;
 
     private LocalDateTime createdAt;
+    private Double averageRating;
+    private Long totalReviews;
 }

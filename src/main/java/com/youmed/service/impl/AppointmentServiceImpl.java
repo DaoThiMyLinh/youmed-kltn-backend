@@ -46,6 +46,7 @@ public class AppointmentServiceImpl implements AppointmentService {
     private final com.youmed.service.InvoiceService invoiceService;
     
     private final com.youmed.repository.InvoiceRepository invoiceRepository;
+    private final com.youmed.repository.DoctorReviewRepository doctorReviewRepository;
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -421,6 +422,19 @@ public class AppointmentServiceImpl implements AppointmentService {
 
     private AppointmentResponse mapToResponse(Appointment appointment) {
 
+        Boolean hasReviewed = false;
+        Integer reviewRating = null;
+        Long reviewId = null;
+
+        if (appointment.getStatus() == AppointmentStatus.COMPLETED) {
+            var reviewOpt = doctorReviewRepository.findByAppointmentId(appointment.getId());
+            if (reviewOpt.isPresent()) {
+                hasReviewed = true;
+                reviewRating = reviewOpt.get().getRating();
+                reviewId = reviewOpt.get().getId();
+            }
+        }
+
         return AppointmentResponse.builder()
                 .id(appointment.getId())
                 .patientId(appointment.getPatient().getId())
@@ -434,6 +448,9 @@ public class AppointmentServiceImpl implements AppointmentService {
                 .reason(appointment.getReason())
                 .status(appointment.getStatus())
                 .createdAt(appointment.getCreatedAt())
+                .hasReviewed(hasReviewed)
+                .reviewRating(reviewRating)
+                .reviewId(reviewId)
                 .build();
     }
 }

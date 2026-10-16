@@ -42,6 +42,7 @@ public class DoctorServiceImpl implements DoctorService {
     private final AppointmentRepository appointmentRepository;
     private final DoctorScheduleRepository doctorScheduleRepository;
     private final TimeSlotRepository timeSlotRepository;
+    private final com.youmed.repository.DoctorReviewRepository doctorReviewRepository;
     private final PasswordEncoder passwordEncoder;
 
     @Value("${app.user.default-password:123456}")
@@ -292,6 +293,15 @@ public class DoctorServiceImpl implements DoctorService {
                     .build();
         }
 
+        Double avgRating = doctorReviewRepository.getAverageRatingByDoctorId(doctor.getId());
+        Long totalReviews = doctorReviewRepository.countByDoctorId(doctor.getId());
+        double roundedAvg = 0.0;
+        if (avgRating != null && totalReviews != null && totalReviews > 0) {
+            roundedAvg = java.math.BigDecimal.valueOf(avgRating)
+                    .setScale(1, java.math.RoundingMode.HALF_UP)
+                    .doubleValue();
+        }
+
         return DoctorResponse.builder()
                 .id(doctor.getId())
                 .fullName(doctor.getUser().getFullName())
@@ -303,6 +313,8 @@ public class DoctorServiceImpl implements DoctorService {
                 .active(doctor.getActive())
                 .role(doctor.getUser() != null ? doctor.getUser().getRole() : null)
                 .createdAt(doctor.getCreatedAt())
+                .averageRating(roundedAvg)
+                .totalReviews(totalReviews != null ? totalReviews : 0L)
                 .build();
     }
 }
