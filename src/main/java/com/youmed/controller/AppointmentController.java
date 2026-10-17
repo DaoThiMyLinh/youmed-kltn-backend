@@ -147,13 +147,4 @@ public class AppointmentController {
                 appointmentService.confirmAppointment(id)
         );
     }
-
-    // Xem chi tiết lịch hẹn theo ID
-    @GetMapping("/{id}")
-    @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<AppointmentResponse> getAppointmentById(@PathVariable Long id) {
-        return ResponseEntity.ok(
-                appointmentService.getAppointmentById(id)
-        );
-    }
 }

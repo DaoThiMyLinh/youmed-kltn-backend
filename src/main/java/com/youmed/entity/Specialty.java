@@ -27,6 +27,9 @@ public class Specialty extends BaseEntity {
     @JoinColumn(name = "manager_id", unique = true)
     private User manager;
 
+    @Column(name = "image_url")
+    private String imageUrl;
+
     @Column(nullable = false)
     @Builder.Default
     private Boolean active = true;

@@ -27,4 +27,14 @@ public class MedicalRecordResponse {
     
     private LocalDateTime updatedAt;
 
+    private java.time.LocalDate followUpDate;
+    
+    private String referralTarget;
+    
+    private String referralServices;
+    
+    private String referralReason;
+    
+    private String referralNotes;
+
 }

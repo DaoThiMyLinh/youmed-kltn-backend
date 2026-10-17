@@ -53,8 +53,5 @@ public class AppointmentResponse {
 
 
     private LocalDateTime createdAt;
-    private Boolean hasReviewed;
-    private Integer reviewRating;
-    private Long reviewId;
 
 }

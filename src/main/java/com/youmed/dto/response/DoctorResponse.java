@@ -24,9 +24,7 @@ public class DoctorResponse {
 
     private Boolean active;
 
-    private com.youmed.enums.Role role;
+    private String imageUrl;
 
     private LocalDateTime createdAt;
-    private Double averageRating;
-    private Long totalReviews;
 }

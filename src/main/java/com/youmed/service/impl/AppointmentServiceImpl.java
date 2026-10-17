@@ -46,7 +46,6 @@ public class AppointmentServiceImpl implements AppointmentService {
     private final com.youmed.service.InvoiceService invoiceService;
     
     private final com.youmed.repository.InvoiceRepository invoiceRepository;
-    private final com.youmed.repository.DoctorReviewRepository doctorReviewRepository;
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -223,16 +222,8 @@ public class AppointmentServiceImpl implements AppointmentService {
 
         AppointmentStatus oldStatus = appointment.getStatus();
         AppointmentStatus newStatus = AppointmentStatus.valueOf(status);
-
-        if (newStatus == AppointmentStatus.CHECKED_IN) {
-            throw new BadRequestException("Chỉ Lễ tân (RECEPTIONIST) mới có quyền tiếp nhận và Check-in bệnh nhân.");
-        }
-
-        if (newStatus == AppointmentStatus.IN_PROGRESS && oldStatus != AppointmentStatus.CHECKED_IN) {
-            throw new BadRequestException("Bệnh nhân cần được Lễ tân Check-in trước khi Bác sĩ bắt đầu khám.");
-        }
-
         appointment.setStatus(newStatus);
+
         appointmentRepository.save(appointment);
         
         if (newStatus == AppointmentStatus.CANCELLED) {
@@ -413,27 +404,7 @@ public class AppointmentServiceImpl implements AppointmentService {
         return mapToResponse(appointment);
     }
 
-    @Override
-    public AppointmentResponse getAppointmentById(Long appointmentId) {
-        Appointment appointment = appointmentRepository.findById(appointmentId)
-                .orElseThrow(() -> new ResourceNotFoundException("Appointment not found with ID: " + appointmentId));
-        return mapToResponse(appointment);
-    }
-
     private AppointmentResponse mapToResponse(Appointment appointment) {
-
-        Boolean hasReviewed = false;
-        Integer reviewRating = null;
-        Long reviewId = null;
-
-        if (appointment.getStatus() == AppointmentStatus.COMPLETED) {
-            var reviewOpt = doctorReviewRepository.findByAppointmentId(appointment.getId());
-            if (reviewOpt.isPresent()) {
-                hasReviewed = true;
-                reviewRating = reviewOpt.get().getRating();
-                reviewId = reviewOpt.get().getId();
-            }
-        }
 
         return AppointmentResponse.builder()
                 .id(appointment.getId())
@@ -448,9 +419,6 @@ public class AppointmentServiceImpl implements AppointmentService {
                 .reason(appointment.getReason())
                 .status(appointment.getStatus())
                 .createdAt(appointment.getCreatedAt())
-                .hasReviewed(hasReviewed)
-                .reviewRating(reviewRating)
-                .reviewId(reviewId)
                 .build();
     }
 }

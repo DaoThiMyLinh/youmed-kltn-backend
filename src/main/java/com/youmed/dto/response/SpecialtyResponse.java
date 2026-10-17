@@ -12,4 +12,5 @@ public class SpecialtyResponse {
     private Boolean active;
     private Long managerId;
     private String managerName;
+    private String imageUrl;
 }
