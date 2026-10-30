@@ -12,6 +12,10 @@ import org.springframework.data.domain.Page;
 
 import java.util.List;
 
+import com.youmed.dto.response.DoctorRatingSummaryResponse;
+import com.youmed.dto.response.DoctorReviewResponse;
+import com.youmed.service.DoctorReviewService;
+import org.springframework.http.ResponseEntity;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
 @RestController
@@ -21,7 +25,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 public class DoctorController {
 
     private final DoctorService doctorService;
-    private final com.youmed.service.DoctorReviewService doctorReviewService;
+    private final DoctorReviewService doctorReviewService;
 
 
     @PostMapping
@@ -67,19 +71,19 @@ public class DoctorController {
     }
 
     @GetMapping("/{id}/reviews")
-    public Page<com.youmed.dto.response.DoctorReviewResponse> getDoctorReviews(
+    public ResponseEntity<Page<DoctorReviewResponse>> getDoctorReviews(
             @PathVariable Long id,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size
     ) {
-        return doctorReviewService.getReviewsByDoctorId(id, page, size);
+        return ResponseEntity.ok(doctorReviewService.getReviewsByDoctorId(id, page, size));
     }
 
     @GetMapping("/{id}/rating-summary")
-    public com.youmed.dto.response.DoctorRatingSummaryResponse getDoctorRatingSummary(
+    public ResponseEntity<DoctorRatingSummaryResponse> getDoctorRatingSummary(
             @PathVariable Long id
     ) {
-        return doctorReviewService.getDoctorRatingSummary(id);
+        return ResponseEntity.ok(doctorReviewService.getDoctorRatingSummary(id));
     }
 
 

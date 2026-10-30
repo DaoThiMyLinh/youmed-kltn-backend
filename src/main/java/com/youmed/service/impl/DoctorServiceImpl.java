@@ -20,17 +20,15 @@ import org.springframework.data.domain.Sort;
 import com.youmed.repository.UserRepository;
 import com.youmed.entity.User;
 import com.youmed.enums.Role;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import com.youmed.repository.AppointmentRepository;
-import com.youmed.repository.DoctorScheduleRepository;
-import com.youmed.repository.TimeSlotRepository;
-import com.youmed.entity.DoctorSchedule;
-import com.youmed.entity.TimeSlot;
-import com.youmed.exception.BadRequestException;
 import com.youmed.exception.ResourceNotFoundException;
 import com.youmed.exception.DuplicateResourceException;
-import org.springframework.transaction.annotation.Transactional;
+
+import com.youmed.repository.DoctorReviewRepository;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.HashMap;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -39,19 +37,30 @@ public class DoctorServiceImpl implements DoctorService {
     private final DoctorRepository doctorRepository;
     private final UserRepository userRepository;
     private final SpecialtyRepository specialtyRepository;
-    private final AppointmentRepository appointmentRepository;
-    private final DoctorScheduleRepository doctorScheduleRepository;
-    private final TimeSlotRepository timeSlotRepository;
-    private final com.youmed.repository.DoctorReviewRepository doctorReviewRepository;
     private final PasswordEncoder passwordEncoder;
-
-    @Value("${app.user.default-password:123456}")
-    private String defaultPassword;
+    private final DoctorReviewRepository doctorReviewRepository;
 
     @Override
     public DoctorResponse createDoctor(DoctorCreateRequest request) {
 
-        Role targetRole = (request.getRole() == Role.DEPARTMENT_MANAGER) ? Role.DEPARTMENT_MANAGER : Role.DOCTOR;
+        User user = userRepository.findByEmail(request.getEmail()).orElse(null);
+        if (user != null) {
+            if (user.getRole() == Role.DOCTOR) {
+                throw new DuplicateResourceException("Doctor email already exists");
+            }
+            user.setRole(Role.DOCTOR);
+            user.setFullName(request.getFullName());
+            user.setPhone(request.getPhone());
+        } else {
+            user = User.builder()
+                    .fullName(request.getFullName())
+                    .email(request.getEmail())
+                    .phone(request.getPhone())
+                    .password(passwordEncoder.encode("bs123"))
+                    .role(Role.DOCTOR)
+                    .build();
+        }
+        user = userRepository.save(user);
 
         Specialty specialty = null;
         if (request.getSpecialtyId() != null) {
@@ -59,70 +68,40 @@ public class DoctorServiceImpl implements DoctorService {
                     .orElseThrow(() -> new ResourceNotFoundException("Specialty not found"));
         }
 
-        if (targetRole == Role.DEPARTMENT_MANAGER) {
-            if (specialty == null) {
-                throw new BadRequestException("Trưởng khoa bắt buộc phải được gắn với một chuyên khoa");
-            }
-            if (specialty.getManager() != null) {
-                User existingUser = userRepository.findByEmail(request.getEmail()).orElse(null);
-                if (existingUser == null || !specialty.getManager().getId().equals(existingUser.getId())) {
-                    throw new DuplicateResourceException("Chuyên khoa " + specialty.getName() + " đã có Trưởng khoa (" + specialty.getManager().getFullName() + "). Mỗi chuyên khoa chỉ được có 1 Trưởng khoa.");
-                }
-            }
-        }
-
-        User user = userRepository.findByEmail(request.getEmail()).orElse(null);
-        if (user != null) {
-            if (user.getRole() == targetRole) {
-                throw new DuplicateResourceException("Email đã tồn tại với vai trò này");
-            }
-            user.setRole(targetRole);
-            user.setFullName(request.getFullName());
-            user.setPhone(request.getPhone());
-        } else {
-            if (request.getPhone() != null && !request.getPhone().trim().isEmpty() && userRepository.existsByPhone(request.getPhone().trim())) {
-                throw new DuplicateResourceException("Số điện thoại đã tồn tại trong hệ thống");
-            }
-            user = User.builder()
-                    .fullName(request.getFullName())
-                    .email(request.getEmail())
-                    .phone(request.getPhone())
-                    .password(passwordEncoder.encode(defaultPassword))
-                    .role(targetRole)
-                    .build();
-        }
-        user = userRepository.save(user);
-
-        if (targetRole == Role.DEPARTMENT_MANAGER) {
-            specialty.setManager(user);
-            specialty = specialtyRepository.save(specialty);
-        }
-
-        Doctor doctor = doctorRepository.findByUserId(user.getId()).orElse(null);
-        if (doctor == null) {
-            doctor = Doctor.builder()
-                    .user(user)
-                    .specialty(specialty)
-                    .consultationFee(request.getConsultationFee() != null ? request.getConsultationFee() : 0.0)
-                    .biography(request.getBiography())
-                    .active(true)
-                    .build();
-        } else {
-            doctor.setSpecialty(specialty);
-            if (request.getConsultationFee() != null) {
-                doctor.setConsultationFee(request.getConsultationFee());
-            }
-            if (request.getBiography() != null) {
-                doctor.setBiography(request.getBiography());
-            }
-            doctor.setActive(true);
-        }
+        Doctor doctor = Doctor.builder()
+                .user(user)
+                .specialty(specialty)
+                .consultationFee(request.getConsultationFee())
+                .biography(request.getBiography())
+                .active(true)
+                .build();
 
         return mapToResponse(
                 doctorRepository.save(doctor)
         );
     }
 
+
+    private record RatingStats(Double avgRating, Long totalReviews) {}
+
+    private Map<Long, RatingStats> getRatingMap() {
+        Map<Long, RatingStats> map = new HashMap<>();
+        if (doctorReviewRepository == null) return map;
+        List<Object[]> rows = doctorReviewRepository.getAllDoctorsRatingSummary();
+        if (rows != null) {
+            for (Object[] row : rows) {
+                Long docId = (Long) row[0];
+                Double avg = (Double) row[1];
+                Long count = (Long) row[2];
+                double rounded = 0.0;
+                if (avg != null && count != null && count > 0) {
+                    rounded = BigDecimal.valueOf(avg).setScale(1, RoundingMode.HALF_UP).doubleValue();
+                }
+                map.put(docId, new RatingStats(rounded, count != null ? count : 0L));
+            }
+        }
+        return map;
+    }
 
     @Override
     public Page<DoctorResponse> getAllDoctors(Boolean active, int page, int size, String sortBy, String sortDir) {
@@ -138,11 +117,15 @@ public class DoctorServiceImpl implements DoctorService {
         Sort sort = sortDir.equalsIgnoreCase(Sort.Direction.ASC.name()) ? Sort.by(sortBy).ascending() : Sort.by(sortBy).descending();
         Pageable pageable = PageRequest.of(page, size, sort);
 
+        Map<Long, RatingStats> ratingMap = getRatingMap();
+
         if (active == null) {
-            return doctorRepository.findAllDoctorsWithCorrectRole(pageable).map(this::mapToResponse);
+            return doctorRepository.findAllDoctorsWithCorrectRole(pageable)
+                    .map(doctor -> mapToResponse(doctor, ratingMap));
         }
         
-        return doctorRepository.findByActiveWithCorrectRole(active, pageable).map(this::mapToResponse);
+        return doctorRepository.findByActiveWithCorrectRole(active, pageable)
+                .map(doctor -> mapToResponse(doctor, ratingMap));
     }
 
 
@@ -159,12 +142,15 @@ public class DoctorServiceImpl implements DoctorService {
         Sort sort = sortDir.equalsIgnoreCase(Sort.Direction.ASC.name()) ? Sort.by(sortBy).ascending() : Sort.by(sortBy).descending();
         Pageable pageable = PageRequest.of(page, size, sort);
 
+        Map<Long, RatingStats> ratingMap = getRatingMap();
+
         if (keyword == null || keyword.trim().isEmpty()) {
-            return doctorRepository.findAllDoctorsWithCorrectRole(pageable).map(this::mapToResponse);
+            return doctorRepository.findAllDoctorsWithCorrectRole(pageable)
+                    .map(doctor -> mapToResponse(doctor, ratingMap));
         }
 
         return doctorRepository.searchDoctorsWithCorrectRole(keyword.trim(), pageable)
-                .map(this::mapToResponse);
+                .map(doctor -> mapToResponse(doctor, ratingMap));
     }
 
     @Override
@@ -195,22 +181,6 @@ public class DoctorServiceImpl implements DoctorService {
         if (request.getSpecialtyId() != null) {
             Specialty specialty = specialtyRepository.findById(request.getSpecialtyId())
                     .orElseThrow(() -> new ResourceNotFoundException("Specialty not found"));
-
-            if (user.getRole() == Role.DEPARTMENT_MANAGER) {
-                if (specialty.getManager() != null && !specialty.getManager().getId().equals(user.getId())) {
-                    throw new DuplicateResourceException("Chuyên khoa " + specialty.getName() + " đã có Trưởng khoa (" + specialty.getManager().getFullName() + "). Mỗi chuyên khoa chỉ được có 1 Trưởng khoa.");
-                }
-                if (doctor.getSpecialty() != null && !doctor.getSpecialty().getId().equals(specialty.getId())) {
-                    Specialty oldSpecialty = doctor.getSpecialty();
-                    if (oldSpecialty.getManager() != null && oldSpecialty.getManager().getId().equals(user.getId())) {
-                        oldSpecialty.setManager(null);
-                        specialtyRepository.save(oldSpecialty);
-                    }
-                }
-                specialty.setManager(user);
-                specialtyRepository.save(specialty);
-            }
-
             doctor.setSpecialty(specialty);
         }
         
@@ -232,7 +202,6 @@ public class DoctorServiceImpl implements DoctorService {
 
 
     @Override
-    @Transactional
     public void deleteDoctor(Long id) {
 
         Doctor doctor = doctorRepository.findById(id)
@@ -240,48 +209,16 @@ public class DoctorServiceImpl implements DoctorService {
                         new ResourceNotFoundException("Doctor not found")
                 );
 
-        if (appointmentRepository.existsByDoctorId(doctor.getId())) {
-            throw new BadRequestException("Không thể xóa bác sĩ đã có lịch hẹn khám. Vui lòng sử dụng tính năng 'Tạm khóa' tài khoản thay vì xóa.");
-        }
-
-        User user = doctor.getUser();
-
-        if (user != null && appointmentRepository.existsByPatientId(user.getId())) {
-            throw new BadRequestException("Không thể xóa tài khoản do người dùng này có lịch sử đặt khám trong hệ thống. Vui lòng sử dụng tính năng 'Tạm khóa'.");
-        }
-
-        List<DoctorSchedule> schedules = doctorScheduleRepository.findByDoctorId(doctor.getId());
-        if (!schedules.isEmpty()) {
-            for (DoctorSchedule schedule : schedules) {
-                List<TimeSlot> slots = timeSlotRepository.findByDoctorScheduleId(schedule.getId());
-                if (!slots.isEmpty()) {
-                    timeSlotRepository.deleteAll(slots);
-                }
-            }
-            doctorScheduleRepository.deleteAll(schedules);
-        }
-
-        if (user != null) {
-            user.setDoctor(null);
-            specialtyRepository.findByManagerId(user.getId()).ifPresent(s -> {
-                s.setManager(null);
-                specialtyRepository.save(s);
-            });
-        }
-
-        doctor.setUser(null);
-        doctor.setSpecialty(null);
         doctorRepository.delete(doctor);
-        doctorRepository.flush();
-
-        if (user != null) {
-            userRepository.delete(user);
-        }
     }
 
 
 
-    private DoctorResponse mapToResponse(Doctor doctor){
+    private DoctorResponse mapToResponse(Doctor doctor) {
+        return mapToResponse(doctor, null);
+    }
+
+    private DoctorResponse mapToResponse(Doctor doctor, Map<Long, RatingStats> ratingMap) {
 
         SpecialtyResponse specialtyResponse = null;
         if (doctor.getSpecialty() != null) {
@@ -290,16 +227,24 @@ public class DoctorServiceImpl implements DoctorService {
                     .name(doctor.getSpecialty().getName())
                     .description(doctor.getSpecialty().getDescription())
                     .active(doctor.getSpecialty().getActive())
+                    .imageUrl(doctor.getSpecialty().getImageUrl())
                     .build();
         }
 
-        Double avgRating = doctorReviewRepository.getAverageRatingByDoctorId(doctor.getId());
-        Long totalReviews = doctorReviewRepository.countByDoctorId(doctor.getId());
-        double roundedAvg = 0.0;
-        if (avgRating != null && totalReviews != null && totalReviews > 0) {
-            roundedAvg = java.math.BigDecimal.valueOf(avgRating)
-                    .setScale(1, java.math.RoundingMode.HALF_UP)
-                    .doubleValue();
+        double avgRating = 0.0;
+        long totalReviews = 0L;
+
+        if (ratingMap != null && ratingMap.containsKey(doctor.getId())) {
+            RatingStats stats = ratingMap.get(doctor.getId());
+            avgRating = stats.avgRating() != null ? stats.avgRating() : 0.0;
+            totalReviews = stats.totalReviews() != null ? stats.totalReviews() : 0L;
+        } else if (doctorReviewRepository != null) {
+            Double dbAvg = doctorReviewRepository.getAverageRatingByDoctorId(doctor.getId());
+            Long dbCount = doctorReviewRepository.countByDoctorId(doctor.getId());
+            if (dbAvg != null && dbCount != null && dbCount > 0) {
+                avgRating = BigDecimal.valueOf(dbAvg).setScale(1, RoundingMode.HALF_UP).doubleValue();
+                totalReviews = dbCount;
+            }
         }
 
         return DoctorResponse.builder()
@@ -311,10 +256,10 @@ public class DoctorServiceImpl implements DoctorService {
                 .email(doctor.getUser().getEmail())
                 .biography(doctor.getBiography())
                 .active(doctor.getActive())
-                .role(doctor.getUser() != null ? doctor.getUser().getRole() : null)
+                .imageUrl(doctor.getImageUrl())
                 .createdAt(doctor.getCreatedAt())
-                .averageRating(roundedAvg)
-                .totalReviews(totalReviews != null ? totalReviews : 0L)
+                .averageRating(avgRating)
+                .totalReviews(totalReviews)
                 .build();
     }
 }

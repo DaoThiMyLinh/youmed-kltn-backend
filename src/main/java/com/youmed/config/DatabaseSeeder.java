@@ -41,10 +41,9 @@ public class DatabaseSeeder implements ApplicationRunner {
     private final DoctorReviewRepository doctorReviewRepository;
 
     @Override
+    @Transactional
     public void run(ApplicationArguments args) {
-        syncDoctorRecordsForManagersAndDoctors();
         seedAll(false);
-        seedReviewsIfEmpty();
     }
 
     @Transactional
@@ -54,28 +53,25 @@ public class DatabaseSeeder implements ApplicationRunner {
         // 1. Seed Master Data (Specialties, Medicines, Symptoms, Diagnoses)
         seedMasterDataSql();
 
-        // 2. Check if database already has rich data
-        if (!force && doctorRepository.count() >= 20 && appointmentRepository.count() >= 100) {
-            log.info("Database already populated with rich data (Doctors: {}, Appointments: {}). Skipping.",
+        // 2. Always ensure users, managers, and doctors are up to date
+        Map<String, User> userMap = seedUsers();
+        updateSpecialtyManagers(userMap);
+        List<Doctor> doctors = seedDoctors(userMap);
+        Map<Long, List<TimeSlot>> doctorSlotsMap = seedDoctorSchedulesAndTimeSlots(doctors);
+
+        // 3. Ensure completed appointments have realistic reviews
+        ensureDoctorReviews();
+
+        // 4. Check if appointments already populated
+        if (!force && appointmentRepository.count() >= 100) {
+            log.info("Appointments and medical records already populated (Doctors: {}, Appointments: {}). Master data and doctor rosters synced.",
                     doctorRepository.count(), appointmentRepository.count());
             return;
         }
 
-        log.info("Starting MASSIVE Database Seeding for YouMed (25 Doctors, 60+ Patients, 150+ Appointments)...");
+        log.info("Starting MASSIVE Database Seeding for Appointments and Medical Records...");
 
-        // 3. Seed Users
-        Map<String, User> userMap = seedUsers();
-
-        // 4. Update Specialty Managers
-        updateSpecialtyManagers(userMap);
-
-        // 5. Seed 25 Doctors
-        List<Doctor> doctors = seedDoctors(userMap);
-
-        // 6. Seed Schedules and TimeSlots for past 5 days, today, and next 8 days
-        Map<Long, List<TimeSlot>> doctorSlotsMap = seedDoctorSchedulesAndTimeSlots(doctors);
-
-        // 7. Seed 150+ Appointments with diverse statuses
+        // 4. Seed Appointments with diverse statuses
         List<User> patients = extractPatients(userMap);
         List<Appointment> appointments = seedMassiveAppointments(patients, doctors, doctorSlotsMap);
 
@@ -146,7 +142,7 @@ public class DatabaseSeeder implements ApplicationRunner {
         createOrGetUser(map, "letan4@youmed.com", defaultPw, "Phạm Ngọc Anh", "0902000004", "Nữ", LocalDate.of(1997, 3, 19), Role.RECEPTIONIST, "Quận Phú Nhuận, TP.HCM");
         createOrGetUser(map, "letan5@youmed.com", defaultPw, "Vũ Hoàng Quân", "0902000005", "Nam", LocalDate.of(1995, 7, 28), Role.RECEPTIONIST, "Quận 10, TP.HCM");
 
-        // 3. 10 Department Managers (1 for each specialty)
+        // 3. 13 Department Managers (1 for each specialty)
         createOrGetUser(map, "manager.noikhoa@youmed.com", defaultPw, "PGS.TS Lê Văn Trưởng", "0903000001", "Nam", LocalDate.of(1972, 3, 15), Role.DEPARTMENT_MANAGER, "Hà Nội");
         createOrGetUser(map, "manager.nhikhoa@youmed.com", defaultPw, "BSCKII Hoàng Văn Nhi", "0903000002", "Nam", LocalDate.of(1978, 11, 5), Role.DEPARTMENT_MANAGER, "Đà Nẵng");
         createOrGetUser(map, "manager.sanphukhoa@youmed.com", defaultPw, "TS.BS Đặng Thị Phụ Sản", "0903000003", "Nữ", LocalDate.of(1975, 4, 18), Role.DEPARTMENT_MANAGER, "TP.HCM");
@@ -157,8 +153,11 @@ public class DatabaseSeeder implements ApplicationRunner {
         createOrGetUser(map, "manager.timmach@youmed.com", defaultPw, "TS.BS Phạm Thị Trưởng", "0903000008", "Nữ", LocalDate.of(1976, 7, 22), Role.DEPARTMENT_MANAGER, "TP.HCM");
         createOrGetUser(map, "manager.thankinh@youmed.com", defaultPw, "PGS.TS Đỗ Văn Kinh", "0903000009", "Nam", LocalDate.of(1969, 6, 25), Role.DEPARTMENT_MANAGER, "Hà Nội");
         createOrGetUser(map, "manager.coxuongkhop@youmed.com", defaultPw, "BSCKII Hồ Thị Khớp", "0903000010", "Nữ", LocalDate.of(1971, 10, 8), Role.DEPARTMENT_MANAGER, "TP.HCM");
+        createOrGetUser(map, "manager.truyennhiem@youmed.com", defaultPw, "BSCKII Đặng Thị Thúy", "0903000011", "Nữ", LocalDate.of(1976, 5, 12), Role.DEPARTMENT_MANAGER, "TP.HCM");
+        createOrGetUser(map, "manager.hohap@youmed.com", defaultPw, "PGS.TS Trần Văn Hô", "0903000012", "Nam", LocalDate.of(1973, 2, 10), Role.DEPARTMENT_MANAGER, "TP.HCM");
+        createOrGetUser(map, "manager.tieuhoa@youmed.com", defaultPw, "BSCKII Nguyễn Văn Tiêu", "0903000013", "Nam", LocalDate.of(1971, 8, 20), Role.DEPARTMENT_MANAGER, "TP.HCM");
 
-        // 4. 25 Doctors
+        // 4. 29 Doctors
         String[][] doctorData = {
                 {"bs.tuan@youmed.com", "ThS.BS Nguyễn Anh Tuấn", "0904000001", "Nam", "1982-04-18", "Quận 3, TP.HCM"},
                 {"bs.binh@youmed.com", "TS.BS Trần Văn Bình", "0904000002", "Nam", "1980-08-11", "Quận 1, TP.HCM"},
@@ -184,7 +183,11 @@ public class DatabaseSeeder implements ApplicationRunner {
                 {"bs.hang@youmed.com", "BSCKII Lương Thị Thu Hằng", "0904000022", "Nữ", "1986-12-23", "Quận Đống Đa, Hà Nội"},
                 {"bs.khoa@youmed.com", "TS.BS Bùi Đăng Khoa", "0904000023", "Nam", "1983-10-19", "Quận 11, TP.HCM"},
                 {"bs.trong@youmed.com", "ThS.BS Ngô Văn Trọng", "0904000024", "Nam", "1987-06-15", "Quận Gò Vấp, TP.HCM"},
-                {"bs.hanh@youmed.com", "BSCKII Đỗ Thị Mỹ Hạnh", "0904000025", "Nữ", "1982-08-30", "Quận 12, TP.HCM"}
+                {"bs.hanh@youmed.com", "BSCKII Đỗ Thị Mỹ Hạnh", "0904000025", "Nữ", "1982-08-30", "Quận 12, TP.HCM"},
+                {"bs.chaunhietdoi@youmed.com", "TS.BS Nguyễn Văn Vĩnh Châu", "0904000026", "Nam", "1966-10-15", "Quận 5, TP.HCM"},
+                {"bs.dungtruyennhiem@youmed.com", "BSCKII Lê Thị Mỹ Dung", "0904000027", "Nữ", "1979-04-12", "Quận 10, TP.HCM"},
+                {"bs.thanhtuyenhohap@youmed.com", "ThS.BS Nguyễn Thanh Tuyền", "0904000028", "Nữ", "1984-07-20", "Quận 1, TP.HCM"},
+                {"bs.minhtieuhoa@youmed.com", "BSCKII Trần Quang Minh", "0904000029", "Nam", "1980-03-15", "Quận 3, TP.HCM"}
         };
 
         for (String[] doc : doctorData) {
@@ -239,47 +242,6 @@ public class DatabaseSeeder implements ApplicationRunner {
         map.put(email, user);
     }
 
-
-    private void syncDoctorRecordsForManagersAndDoctors() {
-        try {
-            List<User> doctorUsers = userRepository.findAll().stream()
-                    .filter(u -> u.getRole() == Role.DOCTOR || u.getRole() == Role.DEPARTMENT_MANAGER)
-                    .toList();
-
-            for (User user : doctorUsers) {
-                Doctor doc = doctorRepository.findByUserId(user.getId()).orElse(null);
-                if (doc == null) {
-                    Specialty specialty = specialtyRepository.findByManagerId(user.getId()).orElse(null);
-                    if (specialty == null) {
-                        if (user.getRole() == Role.DEPARTMENT_MANAGER) {
-                            specialty = specialtyRepository.findAll().stream()
-                                    .filter(s -> s.getManager() == null)
-                                    .findFirst()
-                                    .orElse(null);
-                            if (specialty != null) {
-                                specialty.setManager(user);
-                                specialtyRepository.save(specialty);
-                            }
-                        } else {
-                            specialty = specialtyRepository.findAll().stream().findFirst().orElse(null);
-                        }
-                    }
-                    doc = Doctor.builder()
-                            .user(user)
-                            .specialty(specialty)
-                            .consultationFee(user.getRole() == Role.DEPARTMENT_MANAGER ? 300000.0 : 250000.0)
-                            .biography((user.getRole() == Role.DEPARTMENT_MANAGER ? "Trưởng khoa" : "Bác sĩ") + " tại Bệnh viện YouMed")
-                            .active(user.getEnabled() != null ? user.getEnabled() : true)
-                            .build();
-                    doctorRepository.save(doc);
-                    log.info("Auto-synced missing Doctor record for user: {} (role: {})", user.getEmail(), user.getRole());
-                }
-            }
-        } catch (Exception e) {
-            log.warn("Failed to auto-sync doctor records: {}", e.getMessage());
-        }
-    }
-
     private void updateSpecialtyManagers(Map<String, User> userMap) {
         String[][] mappings = {
                 {"Nội khoa", "manager.noikhoa@youmed.com"},
@@ -291,7 +253,10 @@ public class DatabaseSeeder implements ApplicationRunner {
                 {"Răng Hàm Mặt", "manager.ranghammat@youmed.com"},
                 {"Tim mạch", "manager.timmach@youmed.com"},
                 {"Thần kinh", "manager.thankinh@youmed.com"},
-                {"Cơ xương khớp", "manager.coxuongkhop@youmed.com"}
+                {"Cơ xương khớp", "manager.coxuongkhop@youmed.com"},
+                {"Truyền nhiễm", "manager.truyennhiem@youmed.com"},
+                {"Hô hấp", "manager.hohap@youmed.com"},
+                {"Tiêu hóa - Gan mật", "manager.tieuhoa@youmed.com"}
         };
 
         for (String[] mapping : mappings) {
@@ -300,18 +265,6 @@ public class DatabaseSeeder implements ApplicationRunner {
             if (specialty != null && manager != null) {
                 specialty.setManager(manager);
                 specialtyRepository.save(specialty);
-
-                Doctor doc = doctorRepository.findByUserId(manager.getId()).orElse(null);
-                if (doc == null) {
-                    doc = Doctor.builder()
-                            .user(manager)
-                            .specialty(specialty)
-                            .consultationFee(300000.0)
-                            .biography("Trưởng khoa " + specialty.getName() + " - Bác sĩ chuyên khoa tại Bệnh viện YouMed")
-                            .active(true)
-                            .build();
-                    doctorRepository.save(doc);
-                }
             }
         }
     }
@@ -321,40 +274,47 @@ public class DatabaseSeeder implements ApplicationRunner {
 
         Object[][] doctorConfig = {
                 // Nội khoa
-                {"bs.tuan@youmed.com", "Nội khoa", 200000.0, "Thạc sĩ Bác sĩ chuyên khoa Nội tổng quát hơn 15 năm kinh nghiệm điều trị tiêu hóa, dạ dày, gan mật."},
-                {"bs.binh@youmed.com", "Nội khoa", 250000.0, "Tiến sĩ Bác sĩ chuyên khoa Nội tiết - Đái tháo đường, Bệnh viện Chợ Rẫy."},
-                {"bs.mai@youmed.com", "Nội khoa", 220000.0, "Bác sĩ Chuyên khoa II Nội tổng hợp, tận tâm, nhiều năm công tác tại BV Đại học Y Dược."},
+                {"bs.tuan@youmed.com", "Nội khoa", 200000.0, "Thạc sĩ Bác sĩ chuyên khoa Nội tổng quát hơn 15 năm kinh nghiệm điều trị tiêu hóa, dạ dày, gan mật.", "/images/doctors/bs-tuan.jpg"},
+                {"bs.binh@youmed.com", "Nội khoa", 250000.0, "Tiến sĩ Bác sĩ chuyên khoa Nội tiết - Đái tháo đường, Bệnh viện Chợ Rẫy.", "/images/doctors/bs-binh.jpg"},
+                {"bs.mai@youmed.com", "Nội khoa", 220000.0, "Bác sĩ Chuyên khoa II Nội tổng hợp, tận tâm, nhiều năm công tác tại BV Đại học Y Dược.", "/images/doctors/bs-mai.jpg"},
                 // Nhi khoa
-                {"bs.lan@youmed.com", "Nhi khoa", 250000.0, "Bác sĩ Chuyên khoa II Nhi, nguyên Trưởng khoa Nhi BV Nhi Đồng 2, chuyên sâu hô hấp và dinh dưỡng."},
-                {"bs.son@youmed.com", "Nhi khoa", 180000.0, "Thạc sĩ Bác sĩ Nhi khoa, chuyên khám và tư vấn các bệnh truyền nhiễm và miễn dịch ở trẻ."},
-                {"bs.trang@youmed.com", "Nhi khoa", 180000.0, "Bác sĩ Chuyên khoa I Nhi, nhẹ nhàng, chuyên khám các bệnh tiêu hóa và sơ sinh."},
+                {"bs.lan@youmed.com", "Nhi khoa", 250000.0, "Bác sĩ Chuyên khoa II Nhi, nguyên Trưởng khoa Nhi BV Nhi Đồng 2, chuyên sâu hô hấp và dinh dưỡng.", "/images/doctors/bs-lan.jpg"},
+                {"bs.son@youmed.com", "Nhi khoa", 180000.0, "Thạc sĩ Bác sĩ Nhi khoa, chuyên khám và tư vấn các bệnh truyền nhiễm và miễn dịch ở trẻ.", "/images/doctors/bs-son.jpg"},
+                {"bs.trang@youmed.com", "Nhi khoa", 180000.0, "Bác sĩ Chuyên khoa I Nhi, nhẹ nhàng, chuyên khám các bệnh tiêu hóa và sơ sinh.", "/images/doctors/bs-trang.jpg"},
                 // Sản phụ khoa
-                {"bs.oanh@youmed.com", "Sản phụ khoa", 300000.0, "Bác sĩ Chuyên khoa II Sản Phụ khoa, BV Từ Dũ, chuyên theo dõi thai kỳ nguy cơ cao và hiếm muộn."},
-                {"bs.ngocanh@youmed.com", "Sản phụ khoa", 250000.0, "Tiến sĩ Bác sĩ Sản khoa, hơn 12 năm kinh nghiệm phẫu thuật nội soi phụ khoa."},
+                {"bs.oanh@youmed.com", "Sản phụ khoa", 300000.0, "Bác sĩ Chuyên khoa II Sản Phụ khoa, BV Từ Dũ, chuyên theo dõi thai kỳ nguy cơ cao và hiếm muộn.", "/images/doctors/bs-oanh.jpg"},
+                {"bs.ngocanh@youmed.com", "Sản phụ khoa", 250000.0, "Tiến sĩ Bác sĩ Sản khoa, hơn 12 năm kinh nghiệm phẫu thuật nội soi phụ khoa.", "/images/doctors/bs-ngocanh.jpg"},
                 // Da liễu
-                {"bs.huong@youmed.com", "Da liễu", 200000.0, "Tiến sĩ Bác sĩ Da liễu, chuyên gia đầu ngành về điều trị mụn, viêm da cơ địa và thẩm mỹ da liễu."},
-                {"bs.huy@youmed.com", "Da liễu", 220000.0, "Thạc sĩ Bác sĩ Da liễu, BV Da Liễu TP.HCM, chuyên laser thẩm mỹ và bệnh tự miễn."},
-                {"bs.linh@youmed.com", "Da liễu", 180000.0, "Bác sĩ Chuyên khoa I Da liễu, giàu kinh nghiệm chăm sóc và phục hồi da tổn thương."},
+                {"bs.huong@youmed.com", "Da liễu", 200000.0, "Tiến sĩ Bác sĩ Da liễu, chuyên gia đầu ngành về điều trị mụn, viêm da cơ địa và thẩm mỹ da liễu.", "/images/doctors/bs-huong.jpg"},
+                {"bs.huy@youmed.com", "Da liễu", 220000.0, "Thạc sĩ Bác sĩ Da liễu, BV Da Liễu TP.HCM, chuyên laser thẩm mỹ và bệnh tự miễn.", "/images/doctors/bs-huy.jpg"},
+                {"bs.linh@youmed.com", "Da liễu", 180000.0, "Bác sĩ Chuyên khoa I Da liễu, giàu kinh nghiệm chăm sóc và phục hồi da tổn thương.", "/images/doctors/bs-linh.jpg"},
                 // Mắt
-                {"bs.minh@youmed.com", "Mắt", 180000.0, "Bác sĩ Chuyên khoa I Mắt, chuyên khám tật khúc xạ, đục thủy tinh thể và các bệnh lý giác mạc."},
-                {"bs.nam@youmed.com", "Mắt", 200000.0, "Thạc sĩ Bác sĩ Nhãn khoa, chuyên phẫu thuật Lasik và điều trị Glaucoma."},
+                {"bs.minh@youmed.com", "Mắt", 180000.0, "Bác sĩ Chuyên khoa I Mắt, chuyên khám tật khúc xạ, đục thủy tinh thể và các bệnh lý giác mạc.", "/images/doctors/bs-minh.jpg"},
+                {"bs.nam@youmed.com", "Mắt", 200000.0, "Thạc sĩ Bác sĩ Nhãn khoa, chuyên phẫu thuật Lasik và điều trị Glaucoma.", "/images/doctors/bs-nam.jpg"},
                 // Tai Mũi Họng
-                {"bs.thao@youmed.com", "Tai Mũi Họng", 200000.0, "Thạc sĩ Bác sĩ Tai Mũi Họng, BV Tai Mũi Họng Trung ương, chuyên trị viêm xoang, viêm tai giữa."},
-                {"bs.dang@youmed.com", "Tai Mũi Họng", 250000.0, "Bác sĩ Chuyên khoa II Tai Mũi Họng, chuyên phẫu thuật nội soi xoang và thanh quản."},
+                {"bs.thao@youmed.com", "Tai Mũi Họng", 200000.0, "Thạc sĩ Bác sĩ Tai Mũi Họng, BV Tai Mũi Họng Trung ương, chuyên trị viêm xoang, viêm tai giữa.", "/images/doctors/bs-thao.jpg"},
+                {"bs.dang@youmed.com", "Tai Mũi Họng", 250000.0, "Bác sĩ Chuyên khoa II Tai Mũi Họng, chuyên phẫu thuật nội soi xoang và thanh quản.", "/images/doctors/bs-dang.jpg"},
                 // Răng Hàm Mặt
-                {"bs.hung@youmed.com", "Răng Hàm Mặt", 220000.0, "Bác sĩ Chuyên khoa II Răng Hàm Mặt, hơn 18 năm kinh nghiệm phục hình răng sứ và nha chu."},
-                {"bs.ha@youmed.com", "Răng Hàm Mặt", 200000.0, "Thạc sĩ Bác sĩ Nha khoa thẩm mỹ, niềng răng trong suốt và cấy ghép Implant."},
+                {"bs.hung@youmed.com", "Răng Hàm Mặt", 220000.0, "Bác sĩ Chuyên khoa II Răng Hàm Mặt, hơn 18 năm kinh nghiệm phục hình răng sứ và nha chu.", "/images/doctors/bs-hung.jpg"},
+                {"bs.ha@youmed.com", "Răng Hàm Mặt", 200000.0, "Thạc sĩ Bác sĩ Nha khoa thẩm mỹ, niềng răng trong suốt và cấy ghép Implant.", "/images/doctors/bs-ha.jpg"},
                 // Tim mạch
-                {"bs.dung@youmed.com", "Tim mạch", 350000.0, "Phó Giáo sư, Tiến sĩ Tim mạch can thiệp, Viện Tim TP.HCM, chuyên gia tăng huyết áp và mạch vành."},
-                {"bs.cuong@youmed.com", "Tim mạch", 280000.0, "Tiến sĩ Bác sĩ Tim mạch, chuyên gia siêu âm tim và rối loạn nhịp tim."},
-                {"bs.minhtuan@youmed.com", "Tim mạch", 250000.0, "Bác sĩ Chuyên khoa II Tim mạch, chuyên điều trị suy tim và xơ vữa động mạch."},
+                {"bs.dung@youmed.com", "Tim mạch", 350000.0, "Phó Giáo sư, Tiến sĩ Tim mạch can thiệp, Viện Tim TP.HCM, chuyên gia tăng huyết áp và mạch vành.", "/images/doctors/bs-dung-tm.jpg"},
+                {"bs.cuong@youmed.com", "Tim mạch", 280000.0, "Tiến sĩ Bác sĩ Tim mạch, chuyên gia siêu âm tim và rối loạn nhịp tim.", "/images/doctors/bs-cuong.jpg"},
+                {"bs.minhtuan@youmed.com", "Tim mạch", 250000.0, "Bác sĩ Chuyên khoa II Tim mạch, chuyên điều trị suy tim và xơ vữa động mạch.", "/images/doctors/bs-minhtuan.jpg"},
                 // Thần kinh
-                {"bs.hungtk@youmed.com", "Thần kinh", 350000.0, "Phó Giáo sư, Tiến sĩ Thần kinh học, BV Bạch Mai, chuyên gia điều trị tai biến mạch máu não và Parkinson."},
-                {"bs.hang@youmed.com", "Thần kinh", 250000.0, "Bác sĩ Chuyên khoa II Thần kinh, chuyên trị mất ngủ kéo dài, đau nửa đầu Migraine và đau dây thần kinh."},
+                {"bs.hungtk@youmed.com", "Thần kinh", 350000.0, "Phó Giáo sư, Tiến sĩ Thần kinh học, BV Bạch Mai, chuyên gia điều trị tai biến mạch máu não và Parkinson.", "/images/doctors/bs-hungtk.jpg"},
+                {"bs.hang@youmed.com", "Thần kinh", 250000.0, "Bác sĩ Chuyên khoa II Thần kinh, chuyên trị mất ngủ kéo dài, đau nửa đầu Migraine và đau dây thần kinh.", "/images/doctors/bs-hang.jpg"},
                 // Cơ xương khớp
-                {"bs.khoa@youmed.com", "Cơ xương khớp", 250000.0, "Tiến sĩ Bác sĩ Cơ Xương Khớp, chuyên điều trị thoái hóa khớp, thoát vị đĩa đệm và bệnh gút."},
-                {"bs.trong@youmed.com", "Cơ xương khớp", 200000.0, "Thạc sĩ Bác sĩ Chấn thương Chỉnh hình và Cơ xương khớp, BV Chấn thương Chỉnh hình."},
-                {"bs.hanh@youmed.com", "Cơ xương khớp", 220000.0, "Bác sĩ Chuyên khoa II Cơ Xương Khớp, chuyên tiêm khớp vi điểm và phục hồi chức năng."}
+                {"bs.khoa@youmed.com", "Cơ xương khớp", 250000.0, "Tiến sĩ Bác sĩ Cơ Xương Khớp, chuyên điều trị thoái hóa khớp, thoát vị đĩa đệm và bệnh gút.", "/images/doctors/bs-khoa.jpg"},
+                {"bs.trong@youmed.com", "Cơ xương khớp", 200000.0, "Thạc sĩ Bác sĩ Chấn thương Chỉnh hình và Cơ xương khớp, BV Chấn thương Chỉnh hình.", "/images/doctors/bs-trong.jpg"},
+                {"bs.hanh@youmed.com", "Cơ xương khớp", 220000.0, "Bác sĩ Chuyên khoa II Cơ Xương Khớp, chuyên tiêm khớp vi điểm và phục hồi chức năng.", "/images/doctors/bs-hanh.jpg"},
+                // Truyền nhiễm & Tiêm chủng vắc xin
+                {"bs.chaunhietdoi@youmed.com", "Truyền nhiễm", 300000.0, "Tiến sĩ Bác sĩ chuyên khoa Bệnh Nhiệt đới và Truyền nhiễm, nguyên Giám đốc BV Bệnh Nhiệt Đới, chuyên gia hàng đầu về phơi nhiễm dại, uốn ván, sốt xuất huyết, viêm gan.", "/images/doctors/bs-chau.jpg"},
+                {"bs.dungtruyennhiem@youmed.com", "Truyền nhiễm", 220000.0, "Bác sĩ Chuyên khoa II Truyền nhiễm & Tiêm chủng, chuyên xử lý khẩn cấp vết cắn động vật nghi dại, tư vấn vắc-xin và kháng huyết thanh.", "/images/doctors/bs-dung.jpg"},
+                // Hô hấp
+                {"bs.thanhtuyenhohap@youmed.com", "Hô hấp", 220000.0, "Thạc sĩ Bác sĩ Hô hấp, chuyên điều trị hen phế quản, COPD, viêm phổi và bệnh đường thở mạn tính.", "/images/doctors/bs-tuyen.jpg"},
+                // Tiêu hóa - Gan mật
+                {"bs.minhtieuhoa@youmed.com", "Tiêu hóa - Gan mật", 250000.0, "Bác sĩ Chuyên khoa II Tiêu hóa - Gan mật, chuyên nội soi tiêu hóa, điều trị loét dạ dày HP và viêm gan virus.", "/images/doctors/bs-minh-th.jpg"}
         };
 
         for (Object[] cfg : doctorConfig) {
@@ -362,6 +322,7 @@ public class DatabaseSeeder implements ApplicationRunner {
             String specName = (String) cfg[1];
             Double fee = (Double) cfg[2];
             String bio = (String) cfg[3];
+            String imgUrl = cfg.length > 4 ? (String) cfg[4] : null;
 
             User user = userMap.get(email);
             if (user != null) {
@@ -373,8 +334,12 @@ public class DatabaseSeeder implements ApplicationRunner {
                             .specialty(specialty)
                             .consultationFee(fee)
                             .biography(bio)
+                            .imageUrl(imgUrl)
                             .active(true)
                             .build();
+                    doctor = doctorRepository.save(doctor);
+                } else if (doctor.getImageUrl() == null && imgUrl != null) {
+                    doctor.setImageUrl(imgUrl);
                     doctor = doctorRepository.save(doctor);
                 }
                 doctors.add(doctor);
@@ -638,11 +603,14 @@ public class DatabaseSeeder implements ApplicationRunner {
                 String specName = (app.getDoctor().getSpecialty() != null) ? app.getDoctor().getSpecialty().getName() : "Nội khoa";
                 String[] info = medicalInfoMap.getOrDefault(specName, medicalInfoMap.get("Nội khoa"));
 
+                LocalDate followUpDate = (app.getId() % 5 != 0) ? app.getAppointmentTime().toLocalDate().plusDays((app.getId() % 3 == 0) ? 7 : ((app.getId() % 3 == 1) ? 14 : 30)) : null;
+
                 MedicalRecord record = MedicalRecord.builder()
                         .appointment(app)
                         .diagnosis(info[0])
                         .symptoms(info[1])
                         .notes(info[2])
+                        .followUpDate(followUpDate)
                         .build();
                 record = medicalRecordRepository.save(record);
 
@@ -768,58 +736,40 @@ public class DatabaseSeeder implements ApplicationRunner {
         }
     }
 
-    private void seedReviewsIfEmpty() {
-        try {
-            if (doctorReviewRepository.count() > 0) {
-                return;
-            }
-            List<Appointment> completedAppointments = appointmentRepository.findAll().stream()
-                    .filter(a -> a.getStatus() == AppointmentStatus.COMPLETED)
-                    .toList();
-
-            if (completedAppointments.isEmpty()) {
-                return;
-            }
-
-            String[] positiveComments = {
-                    "Bác sĩ khám rất tận tâm, giải thích bệnh tình rõ ràng, dặn dò chu đáo.",
-                    "Bác sĩ chuyên môn cao, hỏi bệnh kỹ lưỡng và kê đơn thuốc rất hiệu quả.",
-                    "Bác sĩ rất thân thiện, nhẹ nhàng với bệnh nhân, tư vấn cặn kẽ.",
-                    "Bác sĩ chẩn đoán chính xác, uống thuốc 2 ngày đã thấy đỡ nhiều.",
-                    "Bác sĩ nhiệt tình, hướng dẫn chế độ ăn uống và sinh hoạt rất chi tiết.",
-                    "Khám nhanh chóng, không phải chờ đợi lâu, bác sĩ rất có tâm.",
-                    "Bác sĩ tư vấn rất kỹ, giải đáp mọi thắc mắc của người bệnh.",
-                    "Trải nghiệm khám bệnh rất hài lòng, bác sĩ chu đáo và ân cần.",
-                    "Bác sĩ chu đáo, phòng khám chuyên nghiệp và hiện đại.",
-                    "Rất an tâm khi được bác sĩ thăm khám và điều trị."
-            };
-
-            Random rand = new Random(123);
-            int seededCount = 0;
-
-            for (Appointment app : completedAppointments) {
-                if (rand.nextDouble() < 0.65) {
-                    int ratingRoll = rand.nextInt(10);
-                    int rating = (ratingRoll < 6) ? 5 : ((ratingRoll < 9) ? 4 : 3);
-                    String comment = (rand.nextBoolean() || rand.nextBoolean())
-                            ? positiveComments[rand.nextInt(positiveComments.length)]
-                            : null;
-
-                    DoctorReview review = DoctorReview.builder()
-                            .appointment(app)
-                            .patient(app.getPatient())
-                            .doctor(app.getDoctor())
-                            .rating(rating)
-                            .comment(comment)
-                            .build();
-
-                    doctorReviewRepository.save(review);
-                    seededCount++;
-                }
-            }
-            log.info("Successfully seeded {} realistic doctor reviews for completed appointments.", seededCount);
-        } catch (Exception e) {
-            log.warn("Failed to seed reviews: {}", e.getMessage());
+    private void ensureDoctorReviews() {
+        if (doctorReviewRepository == null || doctorReviewRepository.count() >= 25) {
+            return;
         }
+        log.info("Checking and seeding realistic doctor reviews for completed appointments...");
+        List<Appointment> completedAppointments = appointmentRepository.findByStatus(
+                AppointmentStatus.COMPLETED, org.springframework.data.domain.Pageable.unpaged()
+        ).getContent();
+
+        String[] comments = {
+                "Bác sĩ khám rất tận tâm, tư vấn cặn kẽ và giải thích rõ ràng.",
+                "Bác sĩ chuyên môn cao, thái độ nhẹ nhàng và chu đáo.",
+                "Phòng khám sạch đẹp, bác sĩ nhiệt tình dặn dò kỹ lưỡng.",
+                "Điều trị rất hiệu quả, tôi cảm thấy đỡ nhiều sau khi dùng thuốc.",
+                "Rất hài lòng về thái độ phục vụ và chuyên môn của bác sĩ YouMed.",
+                "Bác sĩ tận tình, giải thích cặn kẽ từng loại thuốc và cách sinh hoạt.",
+                "Thủ tục nhanh gọn, bác sĩ giỏi và ân cần."
+        };
+
+        for (Appointment app : completedAppointments) {
+            if (!doctorReviewRepository.existsByAppointmentId(app.getId())) {
+                int rating = (app.getId() % 7 == 0 || app.getId() % 11 == 0) ? 4 : 5;
+                String comment = comments[(int) (app.getId() % comments.length)];
+
+                DoctorReview review = DoctorReview.builder()
+                        .appointment(app)
+                        .doctor(app.getDoctor())
+                        .patient(app.getPatient())
+                        .rating(rating)
+                        .comment(comment)
+                        .build();
+                doctorReviewRepository.save(review);
+            }
+        }
+        log.info("Completed seeding doctor reviews. Total reviews now in DB: {}", doctorReviewRepository.count());
     }
 }

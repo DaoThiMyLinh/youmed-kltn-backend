@@ -17,4 +17,14 @@ public class MedicalRecordCreateRequest {
 
     private String notes;
 
+    private java.time.LocalDate followUpDate;
+    
+    private String referralTarget;
+    
+    private String referralServices;
+    
+    private String referralReason;
+    
+    private String referralNotes;
+
 }

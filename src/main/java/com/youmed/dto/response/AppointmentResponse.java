@@ -56,5 +56,4 @@ public class AppointmentResponse {
     private Boolean hasReviewed;
     private Integer reviewRating;
     private Long reviewId;
-
 }

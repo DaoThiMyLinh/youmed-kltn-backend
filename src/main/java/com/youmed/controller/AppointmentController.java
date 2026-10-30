@@ -100,18 +100,20 @@ public class AppointmentController {
         );
     }
 
-    // RECEPTIONIST/ADMIN xem tất cả lịch khám
+    // RECEPTIONIST/ADMIN xem tất cả lịch khám (tìm kiếm theo từ khóa, ngày, trạng thái)
     @GetMapping
     @PreAuthorize("hasAnyRole('RECEPTIONIST', 'ADMIN')")
     public ResponseEntity<Page<AppointmentResponse>> getAllAppointments(
+            @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String status,
+            @RequestParam(required = false) String date,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(defaultValue = "id") String sortBy,
             @RequestParam(defaultValue = "DESC") String sortDir
     ) {
         return ResponseEntity.ok(
-                appointmentService.getAllAppointments(status, page, size, sortBy, sortDir)
+                appointmentService.getAllAppointments(keyword, status, date, page, size, sortBy, sortDir)
         );
     }
 
@@ -145,15 +147,6 @@ public class AppointmentController {
     ) {
         return ResponseEntity.ok(
                 appointmentService.confirmAppointment(id)
-        );
-    }
-
-    // Xem chi tiết lịch hẹn theo ID
-    @GetMapping("/{id}")
-    @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<AppointmentResponse> getAppointmentById(@PathVariable Long id) {
-        return ResponseEntity.ok(
-                appointmentService.getAppointmentById(id)
         );
     }
 }

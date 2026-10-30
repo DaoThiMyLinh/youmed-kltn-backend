@@ -23,6 +23,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import java.time.LocalDateTime;
 import org.springframework.security.access.AccessDeniedException;
 
 import java.time.LocalDate;
@@ -221,6 +222,11 @@ public class DoctorScheduleServiceImpl implements DoctorScheduleService {
     }
 
     private TimeSlotResponse mapToSlotResponse(TimeSlot slot) {
+        LocalDateTime now = LocalDateTime.now();
+        boolean isPast = slot.getStartDateTime().isBefore(now);
+        boolean isBookable = !Boolean.TRUE.equals(slot.getBooked())
+                && !slot.getStartDateTime().isBefore(now.plusMinutes(30));
+
         return TimeSlotResponse.builder()
                 .id(slot.getId())
                 .doctorScheduleId(slot.getDoctorSchedule().getId())
@@ -228,6 +234,8 @@ public class DoctorScheduleServiceImpl implements DoctorScheduleService {
                 .endDateTime(slot.getEndDateTime())
                 .booked(slot.getBooked())
                 .appointmentId(slot.getAppointment() != null ? slot.getAppointment().getId() : null)
+                .isPast(isPast)
+                .isBookable(isBookable)
                 .build();
     }
 }

@@ -134,6 +134,7 @@ public class SpecialtyServiceImpl implements SpecialtyService {
                 .active(specialty.getActive())
                 .managerId(specialty.getManager() != null ? specialty.getManager().getId() : null)
                 .managerName(specialty.getManager() != null ? specialty.getManager().getFullName() : null)
+                .imageUrl(specialty.getImageUrl())
                 .build();
     }
 

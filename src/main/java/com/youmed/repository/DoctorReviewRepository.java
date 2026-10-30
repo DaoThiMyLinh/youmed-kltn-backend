@@ -32,4 +32,7 @@ public interface DoctorReviewRepository extends JpaRepository<DoctorReview, Long
 
     @Query("SELECT r.rating, COUNT(r) FROM DoctorReview r WHERE r.doctor.id = :doctorId GROUP BY r.rating")
     List<Object[]> getRatingDistributionByDoctorId(@Param("doctorId") Long doctorId);
+
+    @Query("SELECT r.doctor.id, AVG(r.rating), COUNT(r) FROM DoctorReview r GROUP BY r.doctor.id")
+    List<Object[]> getAllDoctorsRatingSummary();
 }
