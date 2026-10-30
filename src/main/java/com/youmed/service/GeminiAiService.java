@@ -9,4 +9,16 @@ public interface GeminiAiService {
     boolean isAvailable();
 
     String generateMedicalAdvice(String userMessage, Specialty specialty, List<Doctor> doctors);
+
+    ConsultationResult consultMedicalQuery(
+            String userMessage,
+            Specialty explicitSpecialty,
+            List<Specialty> allSpecialties,
+            List<Doctor> allDoctors
+    );
+
+    record ConsultationResult(
+            String specialtyName,
+            String advice
+    ) {}
 }

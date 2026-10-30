@@ -41,6 +41,16 @@ public interface AppointmentService {
             String sortDir
     );
 
+    Page<AppointmentResponse> getAllAppointments(
+            String keyword,
+            String status,
+            String date,
+            int page,
+            int size,
+            String sortBy,
+            String sortDir
+    );
+
     AppointmentResponse createAppointmentForPatient(
             CreateAppointmentRequest request,
             Long patientId

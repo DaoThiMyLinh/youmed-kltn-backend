@@ -14,4 +14,6 @@ public class TimeSlotResponse {
     private LocalDateTime endDateTime;
     private Boolean booked;
     private Long appointmentId;
+    private Boolean isPast;
+    private Boolean isBookable;
 }

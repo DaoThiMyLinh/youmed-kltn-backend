@@ -48,4 +48,20 @@ public interface AppointmentRepository
             Pageable pageable
     );
 
+    @org.springframework.data.jpa.repository.Query("SELECT a FROM Appointment a WHERE " +
+            "(:keyword = '' OR LOWER(a.patient.fullName) LIKE LOWER(CONCAT('%', CAST(:keyword AS string), '%')) " +
+            "OR a.patient.phone LIKE CONCAT('%', CAST(:keyword AS string), '%') " +
+            "OR LOWER(a.doctor.user.fullName) LIKE LOWER(CONCAT('%', CAST(:keyword AS string), '%')) " +
+            "OR LOWER(a.doctor.specialty.name) LIKE LOWER(CONCAT('%', CAST(:keyword AS string), '%')) " +
+            "OR CAST(a.id AS string) LIKE CONCAT('%', CAST(:keyword AS string), '%')) " +
+            "AND (:status = '' OR CAST(a.status AS string) = :status) " +
+            "AND (CAST(:startDate AS java.time.LocalDateTime) IS NULL OR a.appointmentTime >= :startDate) " +
+            "AND (CAST(:endDate AS java.time.LocalDateTime) IS NULL OR a.appointmentTime <= :endDate)")
+    Page<Appointment> searchAppointments(
+            @org.springframework.data.repository.query.Param("keyword") String keyword,
+            @org.springframework.data.repository.query.Param("status") String status,
+            @org.springframework.data.repository.query.Param("startDate") LocalDateTime startDate,
+            @org.springframework.data.repository.query.Param("endDate") LocalDateTime endDate,
+            Pageable pageable);
+
 }

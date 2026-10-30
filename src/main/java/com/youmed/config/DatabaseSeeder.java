@@ -38,6 +38,7 @@ public class DatabaseSeeder implements ApplicationRunner {
     private final MedicalRecordRepository medicalRecordRepository;
     private final PrescriptionRepository prescriptionRepository;
     private final InvoiceRepository invoiceRepository;
+    private final DoctorReviewRepository doctorReviewRepository;
 
     @Override
     @Transactional
@@ -58,7 +59,10 @@ public class DatabaseSeeder implements ApplicationRunner {
         List<Doctor> doctors = seedDoctors(userMap);
         Map<Long, List<TimeSlot>> doctorSlotsMap = seedDoctorSchedulesAndTimeSlots(doctors);
 
-        // 3. Check if appointments already populated
+        // 3. Ensure completed appointments have realistic reviews
+        ensureDoctorReviews();
+
+        // 4. Check if appointments already populated
         if (!force && appointmentRepository.count() >= 100) {
             log.info("Appointments and medical records already populated (Doctors: {}, Appointments: {}). Master data and doctor rosters synced.",
                     doctorRepository.count(), appointmentRepository.count());
@@ -730,5 +734,42 @@ public class DatabaseSeeder implements ApplicationRunner {
         } catch (Exception e) {
             log.warn("Could not align entity timestamps: {}", e.getMessage());
         }
+    }
+
+    private void ensureDoctorReviews() {
+        if (doctorReviewRepository == null || doctorReviewRepository.count() >= 25) {
+            return;
+        }
+        log.info("Checking and seeding realistic doctor reviews for completed appointments...");
+        List<Appointment> completedAppointments = appointmentRepository.findByStatus(
+                AppointmentStatus.COMPLETED, org.springframework.data.domain.Pageable.unpaged()
+        ).getContent();
+
+        String[] comments = {
+                "Bác sĩ khám rất tận tâm, tư vấn cặn kẽ và giải thích rõ ràng.",
+                "Bác sĩ chuyên môn cao, thái độ nhẹ nhàng và chu đáo.",
+                "Phòng khám sạch đẹp, bác sĩ nhiệt tình dặn dò kỹ lưỡng.",
+                "Điều trị rất hiệu quả, tôi cảm thấy đỡ nhiều sau khi dùng thuốc.",
+                "Rất hài lòng về thái độ phục vụ và chuyên môn của bác sĩ YouMed.",
+                "Bác sĩ tận tình, giải thích cặn kẽ từng loại thuốc và cách sinh hoạt.",
+                "Thủ tục nhanh gọn, bác sĩ giỏi và ân cần."
+        };
+
+        for (Appointment app : completedAppointments) {
+            if (!doctorReviewRepository.existsByAppointmentId(app.getId())) {
+                int rating = (app.getId() % 7 == 0 || app.getId() % 11 == 0) ? 4 : 5;
+                String comment = comments[(int) (app.getId() % comments.length)];
+
+                DoctorReview review = DoctorReview.builder()
+                        .appointment(app)
+                        .doctor(app.getDoctor())
+                        .patient(app.getPatient())
+                        .rating(rating)
+                        .comment(comment)
+                        .build();
+                doctorReviewRepository.save(review);
+            }
+        }
+        log.info("Completed seeding doctor reviews. Total reviews now in DB: {}", doctorReviewRepository.count());
     }
 }
