@@ -2,20 +2,38 @@ package com.youmed.service.impl;
 
 import com.youmed.dto.ai.AiChatRequest;
 import com.youmed.dto.ai.AiChatResponse;
+import com.youmed.entity.Appointment;
 import com.youmed.entity.Doctor;
+import com.youmed.entity.MedicalRecord;
+import com.youmed.entity.Prescription;
+import com.youmed.entity.PrescriptionItem;
 import com.youmed.entity.Specialty;
 import com.youmed.entity.Symptom;
 import com.youmed.entity.TimeSlot;
+import com.youmed.entity.User;
+import com.youmed.enums.AppointmentStatus;
+import com.youmed.repository.AppointmentRepository;
 import com.youmed.repository.DoctorRepository;
+import com.youmed.repository.MedicalRecordRepository;
+import com.youmed.repository.PrescriptionRepository;
 import com.youmed.repository.SpecialtyRepository;
 import com.youmed.repository.SymptomRepository;
+import com.youmed.repository.UserRepository;
 import com.youmed.service.AiChatService;
+import com.youmed.service.GeminiAiService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import java.text.NumberFormat;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.regex.Matcher;
@@ -31,6 +49,10 @@ public class AiChatServiceImpl implements AiChatService {
     private final SymptomRepository symptomRepository;
     private final com.youmed.repository.TimeSlotRepository timeSlotRepository;
     private final com.youmed.service.GeminiAiService geminiAiService;
+    private final UserRepository userRepository;
+    private final AppointmentRepository appointmentRepository;
+    private final MedicalRecordRepository medicalRecordRepository;
+    private final PrescriptionRepository prescriptionRepository;
 
     @Override
     public AiChatResponse processChat(AiChatRequest request) {
@@ -48,7 +70,12 @@ public class AiChatServiceImpl implements AiChatService {
         LocalDate targetDate = parseTargetDate(lowerMsg);
         Boolean isMorning = parseIsMorning(lowerMsg);
 
-        // 2. Detect Doctor Inquiry by Name
+        // 2. Detect Appointment / Medical History Inquiry (Lịch đã hẹn, lịch đã khám, lịch khám của tôi, đơn thuốc...)
+        if (isAppointmentQuery(lowerMsg)) {
+            return handleAppointmentInquiry(lowerMsg, userMsg, currencyFormat, allSpecialties, allDoctors);
+        }
+
+        // 3. Detect Doctor Inquiry by Name
         for (Doctor doc : allDoctors) {
             String doctorName = doc.getUser().getFullName().toLowerCase();
             String cleanName = doctorName.replaceAll("(ths\\.bs|ts\\.bs|bsckii|bscki|bs|bác sĩ|tiến sĩ|thạc sĩ)", "").trim();
@@ -90,21 +117,36 @@ public class AiChatServiceImpl implements AiChatService {
             return buildPriceInquiryResponse(allSpecialties, allDoctors, currencyFormat);
         }
 
-        // 4. Match Specialty directly from message
+        // 5. Detect General Clinic / Booking / Hours Info Inquiry (only when no specific symptom/doctor/date)
+        if (lowerMsg.contains("địa chỉ") || lowerMsg.contains("ở đâu") || lowerMsg.contains("mấy giờ") 
+                || lowerMsg.contains("giờ làm việc") || lowerMsg.contains("giờ mở cửa") || lowerMsg.contains("hotline") 
+                || lowerMsg.contains("số điện thoại") || lowerMsg.contains("hướng dẫn")) {
+            return buildClinicInfoResponse();
+        }
+
+        // 6. Greeting / General fallback (only for pure greetings)
+        boolean isGreeting = (lowerMsg.startsWith("chào") || lowerMsg.startsWith("xin chào") 
+                || lowerMsg.startsWith("hello") || lowerMsg.equals("hi") || lowerMsg.startsWith("hi ")
+                || lowerMsg.contains("chào bạn") || lowerMsg.contains("chào bot") || lowerMsg.contains("chào ad"))
+                && lowerMsg.length() < 30
+                && !lowerMsg.contains("bị") && !lowerMsg.contains("đau") && !lowerMsg.contains("khám") && !lowerMsg.contains("sốt");
+        if (isGreeting || (lowerMsg.length() <= 3 && !lowerMsg.isBlank() && !lowerMsg.equals("ho"))) {
+            return buildGreetingResponse(allSpecialties);
+        }
+
+        // 7. Match Specialty directly if user explicitly mentions the department name
         Specialty matchedSpecialty = null;
+        int matchedSpecNameLength = 0;
         for (Specialty spec : allSpecialties) {
-            if (lowerMsg.contains(spec.getName().toLowerCase())) {
-                matchedSpecialty = spec;
-                break;
+            if (containsKeyword(lowerMsg, spec.getName())) {
+                if (spec.getName().length() > matchedSpecNameLength) {
+                    matchedSpecialty = spec;
+                    matchedSpecNameLength = spec.getName().length();
+                }
             }
         }
 
-        // 5. Clinical Heuristic mapping to DB Specialties (Prioritized)
-        if (matchedSpecialty == null) {
-            matchedSpecialty = findSpecialtyByHeuristics(lowerMsg, allSpecialties);
-        }
-
-        // 6. Match Symptoms from DB
+        // 8. Match Symptoms from DB
         Symptom matchedSymptom = null;
         for (Symptom sym : allSymptoms) {
             String symName = sym.getName().toLowerCase();
@@ -118,22 +160,7 @@ public class AiChatServiceImpl implements AiChatService {
             }
         }
 
-        if (matchedSymptom == null) {
-            for (Symptom sym : allSymptoms) {
-                String symName = sym.getName().toLowerCase();
-                if (isSymptomRelated(lowerMsg, symName)) {
-                    if (matchedSpecialty == null || (sym.getSpecialty() != null && sym.getSpecialty().getId().equals(matchedSpecialty.getId()))) {
-                        matchedSymptom = sym;
-                        if (matchedSpecialty == null && sym.getSpecialty() != null) {
-                            matchedSpecialty = sym.getSpecialty();
-                        }
-                        break;
-                    }
-                }
-            }
-        }
-
-        // 7. Detect Doctor Gender Preference (Bác sĩ nữ / Bác sĩ nam)
+        // 9. Detect Doctor Gender Preference (Bác sĩ nữ / Bác sĩ nam)
         boolean isFemalePref = lowerMsg.contains("bác sĩ nữ") || lowerMsg.contains("bs nữ") 
                 || lowerMsg.contains("bác sỹ nữ") || lowerMsg.contains("bác si nữ")
                 || lowerMsg.contains("tìm bác sĩ nữ") || lowerMsg.contains("khám bác sĩ nữ") 
@@ -153,65 +180,87 @@ public class AiChatServiceImpl implements AiChatService {
             return buildDoctorByGenderResponse(isFemalePref, matchedSpecialty, matchedSymptom, targetDate, isMorning, allDoctors, currencyFormat);
         }
 
-        // 8. If Specialty/Symptom was determined:
-        if (matchedSpecialty != null) {
-            if (targetDate != null) {
-                return buildScheduleBookingResponse(userMsg, matchedSpecialty, matchedSymptom, targetDate, isMorning, allDoctors, currencyFormat);
-            }
-            return buildSymptomAdviceResponse(userMsg, matchedSpecialty, matchedSymptom, allDoctors, currencyFormat);
-        }
-
-        // 8. Detect General Clinic / Booking / Hours Info Inquiry (only when no specific symptom/doctor/date)
-        if (lowerMsg.contains("địa chỉ") || lowerMsg.contains("ở đâu") || lowerMsg.contains("mấy giờ") 
-                || lowerMsg.contains("giờ làm việc") || lowerMsg.contains("giờ mở cửa") || lowerMsg.contains("hotline") 
-                || lowerMsg.contains("số điện thoại") || lowerMsg.contains("đặt lịch") || lowerMsg.contains("hướng dẫn")) {
-            return buildClinicInfoResponse();
-        }
-
-        // 9. Greeting / General fallback
-        if (lowerMsg.contains("chào") || lowerMsg.contains("hello") || lowerMsg.matches(".*\\bhi\\b.*") || (lowerMsg.length() < 6 && !lowerMsg.isBlank())) {
-            return buildGreetingResponse(allSpecialties);
-        }
-
-        // 10. Call Gemini AI for any open-ended medical / health / emergency query!
+        // 10. PRIMARY MEDICAL TRIAGE: AI Clinical Intelligence via Gemini
+        // Dynamically determines the best specialty among YouMed's 13 departments without relying on brittle regex!
         if (geminiAiService != null && geminiAiService.isAvailable()) {
-            Specialty fallbackSpec = allSpecialties.stream()
-                    .filter(s -> s.getName().toLowerCase().contains("nội khoa") || s.getName().toLowerCase().contains("cấp cứu"))
-                    .findFirst()
-                    .orElse(allSpecialties.isEmpty() ? null : allSpecialties.get(0));
+            GeminiAiService.ConsultationResult result = geminiAiService.consultMedicalQuery(
+                    userMsg, matchedSpecialty, allSpecialties, allDoctors
+            );
+            if (result != null && result.advice() != null && !result.advice().isBlank()) {
+                Specialty chosenSpec = matchedSpecialty;
+                if (chosenSpec == null && result.specialtyName() != null && !result.specialtyName().isBlank()) {
+                    for (Specialty s : allSpecialties) {
+                        if (s.getName().equalsIgnoreCase(result.specialtyName())
+                                || result.specialtyName().toLowerCase().contains(s.getName().toLowerCase())
+                                || s.getName().toLowerCase().contains(result.specialtyName().toLowerCase())) {
+                            chosenSpec = s;
+                            break;
+                        }
+                    }
+                }
+                if (chosenSpec == null) {
+                    chosenSpec = findSpecialtyByHeuristics(lowerMsg, allSpecialties);
+                }
+                if (chosenSpec == null && !allSpecialties.isEmpty()) {
+                    chosenSpec = allSpecialties.stream()
+                            .filter(s -> s.getName().toLowerCase().contains("nội khoa"))
+                            .findFirst()
+                            .orElse(allSpecialties.get(0));
+                }
 
-            List<Doctor> relevantDocs = allDoctors.stream()
-                    .filter(d -> fallbackSpec == null || (d.getSpecialty() != null && d.getSpecialty().getId().equals(fallbackSpec.getId())))
-                    .limit(3)
-                    .collect(Collectors.toList());
+                if (targetDate != null && chosenSpec != null) {
+                    return buildScheduleBookingResponse(userMsg, chosenSpec, matchedSymptom, targetDate, isMorning, allDoctors, currencyFormat);
+                }
 
-            String geminiAdvice = geminiAiService.generateMedicalAdvice(userMsg, fallbackSpec, relevantDocs);
-            if (geminiAdvice != null && !geminiAdvice.isBlank()) {
-                StringBuilder reply = new StringBuilder(geminiAdvice);
-                reply.append("\n\n💡 Hotline Cấp cứu & Tư vấn 24/7 của YouMed: **1900 1234** (123 Hải Triều, Q.1, TP.HCM).");
+                final Specialty finalSpec = chosenSpec;
+                List<Doctor> doctorsInSpecialty = allDoctors.stream()
+                        .filter(d -> finalSpec != null && d.getSpecialty() != null && d.getSpecialty().getId().equals(finalSpec.getId()))
+                        .limit(3)
+                        .collect(Collectors.toList());
 
-                List<AiChatResponse.DoctorSummary> doctorSummaries = relevantDocs.stream().map(d ->
+                List<AiChatResponse.DoctorSummary> doctorSummaries = doctorsInSpecialty.stream().map(d ->
                         AiChatResponse.DoctorSummary.builder()
                                 .id(d.getId())
                                 .fullName(d.getUser().getFullName())
-                                .specialtyName(d.getSpecialty() != null ? d.getSpecialty().getName() : "Đa khoa")
+                                .specialtyName(finalSpec != null ? finalSpec.getName() : "Đa khoa")
                                 .consultationFee(d.getConsultationFee())
                                 .biography(d.getBiography())
                                 .imageUrl(d.getImageUrl())
                                 .build()
                 ).collect(Collectors.toList());
 
+                StringBuilder reply = new StringBuilder(result.advice());
+                reply.append("\n\n👉 Bạn có thể nhấn trực tiếp vào thẻ bác sĩ bên dưới để chọn giờ khám thuận tiện nhất!");
+
                 return AiChatResponse.builder()
                         .reply(reply.toString())
-                        .intent("MEDICAL_ADVICE")
+                        .intent("SYMPTOM_ADVICE")
+                        .suggestedSpecialty(finalSpec != null ? AiChatResponse.SpecialtySummary.builder()
+                                .id(finalSpec.getId())
+                                .name(finalSpec.getName())
+                                .description(finalSpec.getDescription())
+                                .imageUrl(finalSpec.getImageUrl())
+                                .build() : null)
                         .suggestedDoctors(doctorSummaries)
                         .quickSuggestions(List.of(
-                                "Gọi hotline cấp cứu 1900 1234",
-                                "Đặt lịch khám tại YouMed",
-                                "Bảng giá khám bệnh"
+                                "Đặt lịch khám chuyên khoa " + (finalSpec != null ? finalSpec.getName() : "YouMed"),
+                                "Bảng giá khám tại phòng khám",
+                                "Giờ làm việc và địa chỉ phòng khám"
                         ))
                         .build();
             }
+        }
+
+        // 11. OFFLINE FALLBACK: Clinical Heuristic mapping (when AI service is unreachable)
+        if (matchedSpecialty == null) {
+            matchedSpecialty = findSpecialtyByHeuristics(lowerMsg, allSpecialties);
+        }
+
+        if (matchedSpecialty != null) {
+            if (targetDate != null) {
+                return buildScheduleBookingResponse(userMsg, matchedSpecialty, matchedSymptom, targetDate, isMorning, allDoctors, currencyFormat);
+            }
+            return buildSymptomAdviceResponse(userMsg, matchedSpecialty, matchedSymptom, allDoctors, currencyFormat);
         }
 
         // 11. Default Helpful Medical Fallback
@@ -233,52 +282,97 @@ public class AiChatServiceImpl implements AiChatService {
         return words.length > 2 ? matchCount >= (words.length - 1) : matchCount >= 2;
     }
 
+    private boolean containsKeyword(String text, String keyword) {
+        if (text == null || keyword == null || keyword.isBlank()) {
+            return false;
+        }
+        String patternStr = "(?i)(^|[^\\p{L}\\p{N}])" + Pattern.quote(keyword.trim().toLowerCase()) + "([^\\p{L}\\p{N}]|$)";
+        return Pattern.compile(patternStr, Pattern.UNICODE_CHARACTER_CLASS).matcher(text.toLowerCase()).find();
+    }
+
     private Specialty findSpecialtyByHeuristics(String lowerMsg, List<Specialty> specialties) {
         Map<String, String[]> keywordMap = new LinkedHashMap<>();
         // Priority 1: Truyền nhiễm & tiêm chủng, tai nạn động vật cắn
         keywordMap.put("Truyền nhiễm", new String[]{
-                "chó cắn", "mèo cắn", "mèo cào", "chó", "mèo", "súc vật cắn", "động vật cắn", "dại", "bệnh dại",
+                "chó cắn", "mèo cắn", "mèo cào", "chó dại", "súc vật cắn", "động vật cắn", "bệnh dại", "dại",
                 "uốn ván", "tiêm vắc xin", "tiêm vacxin", "vắc xin", "tiêm phòng", "tiêm chủng", "huyết thanh",
                 "sốt xuất huyết", "thủy đậu", "tay chân miệng", "sởi", "quai bị", "rubella",
-                "viêm gan b", "viêm gan c", "nhiễm trùng", "covid", "phơi nhiễm", "hiv", "rắn cắn", "rắn độc", "rắn", "ong đốt"
+                "viêm gan b", "viêm gan c", "nhiễm trùng", "covid", "phơi nhiễm", "hiv", "rắn cắn", "rắn độc", "ong đốt",
+                "chó", "mèo", "rắn"
         });
         // Priority 2: Hô hấp & Phổi
-        keywordMap.put("Hô hấp", new String[]{"phổi", "hen suyễn", "suyễn", "copd", "viêm phế quản", "viêm phổi", "khó thở kịch phát"});
+        keywordMap.put("Hô hấp", new String[]{
+                "viêm phế quản", "viêm phổi", "hen suyễn", "suyễn", "copd", "khó thở kịch phát", 
+                "khó thở", "ho nhiều", "ho ra máu", "ho có đờm", "ho khan", "tức ngực khó thở", "phổi"
+        });
         // Priority 3: Tiêu hóa & Gan mật
-        keywordMap.put("Tiêu hóa - Gan mật", new String[]{"dạ dày", "đại tràng", "tiêu hóa", "ợ chua", "trào ngược", "đầy bụng", "đau bụng", "gan", "ruột", "nội soi dạ dày", "tiêu chảy", "táo bón"});
+        keywordMap.put("Tiêu hóa - Gan mật", new String[]{
+                "nội soi dạ dày", "trào ngược dạ dày", "trào ngược", "ợ chua", "ợ nóng", 
+                "đầy bụng", "đau bụng", "tiêu chảy", "táo bón", "dạ dày", "đại tràng", "tiêu hóa", "gan", "ruột"
+        });
         // Priority 4: Tim mạch
-        keywordMap.put("Tim mạch", new String[]{"tim", "huyết áp", "đau ngực", "hồi hộp", "nhịp tim", "mạch vành"});
+        keywordMap.put("Tim mạch", new String[]{
+                "nhồi máu cơ tim", "mạch vành", "huyết áp cao", "tăng huyết áp", "huyết áp", 
+                "đau ngực", "hồi hộp", "nhịp tim", "tim đập nhanh", "tim"
+        });
         // Priority 5: Thần kinh
-        keywordMap.put("Thần kinh", new String[]{"đau đầu", "chóng mặt", "mất ngủ", "tiền đình", "đột quỵ", "tê bì", "co giật"});
+        keywordMap.put("Thần kinh", new String[]{
+                "hoa mắt chóng mặt", "rối loạn tiền đình", "đau nửa đầu", "chóng mặt", "đau đầu", 
+                "mất ngủ", "tiền đình", "đột quỵ", "tê bì", "co giật", "hoa mắt", "choáng váng", "thần kinh"
+        });
         // Priority 6: Da liễu
-        keywordMap.put("Da liễu", new String[]{"ngứa", "dị ứng", "mụn", "nổi mẩn", "viêm da", "nấm", "mày đay"});
+        keywordMap.put("Da liễu", new String[]{
+                "nổi mề đay", "mày đay", "viêm da", "dị ứng", "nổi mẩn", "ngứa ngáy", "nấm da", "mụn mủ", "mụn", "ngứa", "nấm"
+        });
         // Priority 7: Cơ xương khớp
-        keywordMap.put("Cơ xương khớp", new String[]{"khớp", "xương", "đầu gối", "lưng", "cột sống", "thoái hóa", "gout", "viêm khớp", "gút"});
+        keywordMap.put("Cơ xương khớp", new String[]{
+                "thoái hóa khớp", "viêm khớp", "cột sống", "đầu gối", "khớp gối", "đau lưng", 
+                "thoát vị đĩa đệm", "thoái hóa", "gút", "gout", "xương", "khớp", "lưng"
+        });
         // Priority 8: Nhi khoa
-        keywordMap.put("Nhi khoa", new String[]{"trẻ em", "bé", "sơ sinh", "trẻ con", "sốt phát ban", "biếng ăn", "suy dinh dưỡng"});
+        keywordMap.put("Nhi khoa", new String[]{
+                "sốt phát ban", "suy dinh dưỡng", "biếng ăn", "trẻ em", "sơ sinh", "trẻ con", "bé", "em bé"
+        });
         // Priority 9: Tai Mũi Họng
-        keywordMap.put("Tai Mũi Họng", new String[]{"tai", "mũi", "họng", "viêm xoang", "ù tai", "khàn tiếng", "viêm amidan", "chảy máu cam"});
+        keywordMap.put("Tai Mũi Họng", new String[]{
+                "viêm amidan", "chảy máu cam", "viêm xoang", "khàn tiếng", "ù tai", "viêm họng", "tai", "mũi", "họng"
+        });
         // Priority 10: Răng Hàm Mặt
-        keywordMap.put("Răng Hàm Mặt", new String[]{"răng", "nướu", "chân răng", "nhổ răng", "răng khôn", "niềng răng", "sâu răng"});
+        keywordMap.put("Răng Hàm Mặt", new String[]{
+                "răng khôn", "niềng răng", "nhổ răng", "chân răng", "sâu răng", "viêm lợi", "răng", "nướu"
+        });
         // Priority 11: Mắt
-        keywordMap.put("Mắt", new String[]{"mắt", "nhìn mờ", "cận thị", "đỏ mắt", "đục thủy tinh thể", "nhức mắt"});
+        keywordMap.put("Mắt", new String[]{
+                "đục thủy tinh thể", "nhìn mờ", "cận thị", "đỏ mắt", "nhức mắt", "mắt"
+        });
         // Priority 12: Sản phụ khoa
-        keywordMap.put("Sản phụ khoa", new String[]{"kinh nguyệt", "thai", "sinh", "phụ khoa", "u xơ", "buồng trứng"});
+        keywordMap.put("Sản phụ khoa", new String[]{
+                "kinh nguyệt", "buồng trứng", "phụ khoa", "u xơ", "mang thai", "thai", "sinh"
+        });
         // Priority 13: Nội khoa chung
-        keywordMap.put("Nội khoa", new String[]{"ngộ độc", "mệt mỏi", "suy nhược", "sốt nhẹ", "sốt cao", "sốt"});
+        keywordMap.put("Nội khoa", new String[]{
+                "ngộ độc thực phẩm", "ngộ độc", "suy nhược", "sốt cao", "sốt nhẹ", "mệt mỏi", "sốt"
+        });
+
+        Specialty bestSpecialty = null;
+        int maxKeywordLength = 0;
 
         for (Map.Entry<String, String[]> entry : keywordMap.entrySet()) {
             for (String kw : entry.getValue()) {
-                if (lowerMsg.contains(kw)) {
-                    for (Specialty s : specialties) {
-                        if (s.getName().toLowerCase().contains(entry.getKey().toLowerCase())) {
-                            return s;
+                if (containsKeyword(lowerMsg, kw)) {
+                    if (kw.length() > maxKeywordLength) {
+                        for (Specialty s : specialties) {
+                            if (s.getName().toLowerCase().contains(entry.getKey().toLowerCase())) {
+                                bestSpecialty = s;
+                                maxKeywordLength = kw.length();
+                                break;
+                            }
                         }
                     }
                 }
             }
         }
-        return null;
+        return bestSpecialty;
     }
 
     private AiChatResponse buildSymptomAdviceResponse(
@@ -941,4 +1035,292 @@ public class AiChatServiceImpl implements AiChatService {
     private boolean isDoctorMale(Doctor doc) {
         return !isDoctorFemale(doc);
     }
+
+    private boolean isAppointmentQuery(String lowerMsg) {
+        // Exclude clear new booking intents unless combined with past/inquiry terms
+        boolean isNewBookingIntent = (lowerMsg.startsWith("đặt lịch") || lowerMsg.contains("muốn đặt lịch") || lowerMsg.contains("hướng dẫn đặt lịch"))
+                && !lowerMsg.contains("đã đặt") && !lowerMsg.contains("của tôi") && !lowerMsg.contains("đã hẹn") && !lowerMsg.contains("đã khám");
+        if (isNewBookingIntent) {
+            return false;
+        }
+
+        return lowerMsg.contains("lịch đã hẹn")
+                || lowerMsg.contains("lịch đã khám")
+                || lowerMsg.contains("lịch hẹn của tôi")
+                || lowerMsg.contains("lịch khám của tôi")
+                || lowerMsg.contains("lịch của tôi")
+                || lowerMsg.contains("lịch sử khám")
+                || lowerMsg.contains("hồ sơ khám của tôi")
+                || lowerMsg.contains("đã hẹn")
+                || lowerMsg.contains("đã khám")
+                || lowerMsg.contains("sắp khám")
+                || lowerMsg.contains("tôi có lịch")
+                || lowerMsg.contains("có lịch không")
+                || lowerMsg.contains("khi nào tôi khám")
+                || lowerMsg.contains("khi nào khám")
+                || lowerMsg.contains("hôm nay tôi có khám không")
+                || lowerMsg.contains("hôm nay có lịch không")
+                || lowerMsg.contains("tra cứu lịch")
+                || lowerMsg.contains("kiểm tra lịch")
+                || lowerMsg.contains("xem lịch hẹn")
+                || lowerMsg.contains("xem lịch khám")
+                || lowerMsg.contains("đơn thuốc của tôi")
+                || lowerMsg.contains("toa thuốc của tôi")
+                || lowerMsg.contains("thuốc tôi đã kê")
+                || lowerMsg.contains("kết quả khám của tôi")
+                || (lowerMsg.contains("lịch") && (lowerMsg.contains("của tôi") || lowerMsg.contains("đã đặt") || lowerMsg.contains("sắp tới")));
+    }
+
+    private AiChatResponse handleAppointmentInquiry(
+            String lowerMsg,
+            String userMsg,
+            NumberFormat currencyFormat,
+            List<Specialty> allSpecialties,
+            List<Doctor> allDoctors
+    ) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        boolean isAuthenticated = auth != null && auth.isAuthenticated()
+                && !(auth instanceof AnonymousAuthenticationToken)
+                && auth.getName() != null && !auth.getName().equalsIgnoreCase("anonymousUser");
+
+        // 1. GUEST USER (Khách vãng lai / Chưa đăng nhập)
+        if (!isAuthenticated) {
+            StringBuilder reply = new StringBuilder();
+            reply.append("👋 **Chào bạn!**\n\n");
+            reply.append("Vì lý do **bảo mật thông tin hồ sơ y tế cá nhân**, Trợ lý AI chỉ có thể tra cứu và hiển thị danh sách lịch hẹn hoặc lịch sử khám khi bạn đã đăng nhập vào hệ thống YouMed.\n\n");
+            reply.append("🔐 **Để tra cứu lịch hẹn của mình, bạn vui lòng:**\n");
+            reply.append("1. Nhấn nút **[Đăng nhập tài khoản]** bên dưới bằng tài khoản bạn đã dùng khi đặt khám.\n");
+            reply.append("2. Sau khi đăng nhập, bạn có thể quay lại hỏi tôi bất kỳ lúc nào hoặc truy cập trực tiếp trang **[Lịch sử khám bệnh]**.\n\n");
+            reply.append("💡 *Nếu bạn là khách hàng mới và muốn đặt lịch khám, bạn có thể hỏi tôi về triệu chứng, bác sĩ chuyên khoa hoặc bảng giá để được hỗ trợ ngay nhé!*");
+
+            return AiChatResponse.builder()
+                    .reply(reply.toString())
+                    .intent("REQUIRE_LOGIN_APPOINTMENTS")
+                    .quickSuggestions(List.of(
+                            "Đăng nhập tài khoản",
+                            "Đăng ký tài khoản mới",
+                            "Đặt lịch khám mới",
+                            "Bảng giá khám bệnh",
+                            "Hotline: 1900 1234"
+                    ))
+                    .build();
+        }
+
+        // 2. AUTHENTICATED PATIENT (Khách đã đăng nhập)
+        String email = auth.getName();
+        Optional<User> userOpt = userRepository.findByEmail(email);
+        if (userOpt.isEmpty()) {
+            return AiChatResponse.builder()
+                    .reply("⚠️ Không tìm thấy thông tin tài khoản của bạn trên hệ thống. Bạn vui lòng đăng nhập lại để tiếp tục tra cứu nhé!")
+                    .intent("REQUIRE_LOGIN_APPOINTMENTS")
+                    .quickSuggestions(List.of("Đăng nhập tài khoản", "Hotline: 1900 1234"))
+                    .build();
+        }
+
+        User patient = userOpt.get();
+        String patientName = patient.getFullName() != null ? patient.getFullName() : "Quý khách";
+
+        Pageable pageable = PageRequest.of(0, 20, Sort.by(Sort.Direction.DESC, "appointmentTime"));
+        Page<Appointment> apptPage = appointmentRepository.findByPatientId(patient.getId(), pageable);
+        List<Appointment> allAppts = (apptPage != null) ? apptPage.getContent() : Collections.emptyList();
+
+        LocalDateTime now = LocalDateTime.now();
+
+        // Upcoming appointments
+        List<Appointment> upcoming = allAppts.stream()
+                .filter(a -> a.getStatus() != AppointmentStatus.CANCELLED
+                        && a.getStatus() != AppointmentStatus.COMPLETED
+                        && (a.getAppointmentTime() != null && a.getAppointmentTime().isAfter(now.minusHours(2))))
+                .sorted(Comparator.comparing(Appointment::getAppointmentTime))
+                .collect(Collectors.toList());
+
+        // Completed appointments
+        List<Appointment> completed = allAppts.stream()
+                .filter(a -> a.getStatus() == AppointmentStatus.COMPLETED)
+                .sorted((a1, a2) -> a2.getAppointmentTime().compareTo(a1.getAppointmentTime()))
+                .collect(Collectors.toList());
+
+        boolean isPastSpecific = lowerMsg.contains("đã khám")
+                || lowerMsg.contains("lịch sử")
+                || lowerMsg.contains("lần trước")
+                || lowerMsg.contains("đơn thuốc")
+                || lowerMsg.contains("toa thuốc")
+                || lowerMsg.contains("kết quả khám")
+                || lowerMsg.contains("kê thuốc")
+                || lowerMsg.contains("chẩn đoán");
+
+        StringBuilder reply = new StringBuilder();
+
+        // CASE A: User specifically asks for past completed visits / prescriptions / diagnosis
+        if (isPastSpecific) {
+            if (completed.isEmpty()) {
+                reply.append("👋 Chào **").append(patientName).append("**!\n\n");
+                reply.append("Hiện tại bạn **chưa có buổi khám nào đã hoàn thành** trên hệ thống YouMed.\n\n");
+                if (!upcoming.isEmpty()) {
+                    reply.append("👉 Tuy nhiên, bạn đang có **").append(upcoming.size()).append(" lịch hẹn sắp tới**:\n\n");
+                    formatUpcomingAppointmentList(reply, upcoming);
+                } else {
+                    reply.append("💡 *Bạn có thể đặt lịch khám trực tiếp với bác sĩ chuyên khoa ngay trên hệ thống bất cứ lúc nào.*");
+                }
+                return AiChatResponse.builder()
+                        .reply(reply.toString())
+                        .intent("PATIENT_HISTORY")
+                        .quickSuggestions(List.of("Đặt lịch khám mới", "Bảng giá khám bệnh", "Hotline: 1900 1234"))
+                        .build();
+            }
+
+            reply.append("📋 **Chào ").append(patientName).append(", dưới đây là thông tin các buổi khám đã hoàn thành gần đây của bạn:**\n\n");
+            int count = 0;
+            for (Appointment appt : completed) {
+                if (++count > 3) break;
+                String docName = (appt.getDoctor() != null && appt.getDoctor().getUser() != null)
+                        ? appt.getDoctor().getUser().getFullName() : "Bác sĩ YouMed";
+                String specName = (appt.getDoctor() != null && appt.getDoctor().getSpecialty() != null)
+                        ? appt.getDoctor().getSpecialty().getName() : "Đa khoa";
+
+                DateTimeFormatter dtf = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
+                String timeStr = appt.getAppointmentTime() != null ? appt.getAppointmentTime().format(dtf) : "N/A";
+
+                reply.append(count).append(". 🩺 **Khám ").append(specName).append("** — Ngày **").append(timeStr).append("**\n");
+                reply.append("   • **Bác sĩ phụ trách:** ").append(docName).append("\n");
+
+                Optional<MedicalRecord> medRecordOpt = medicalRecordRepository.findByAppointmentId(appt.getId());
+                if (medRecordOpt.isPresent()) {
+                    MedicalRecord mr = medRecordOpt.get();
+                    if (mr.getDiagnosis() != null && !mr.getDiagnosis().isBlank()) {
+                        reply.append("   • **Chẩn đoán:** ").append(mr.getDiagnosis().trim()).append("\n");
+                    }
+                    if (mr.getFollowUpDate() != null) {
+                        reply.append("   • **Hẹn tái khám:** ").append(mr.getFollowUpDate().format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))).append("\n");
+                    }
+
+                    Optional<Prescription> prescOpt = prescriptionRepository.findByMedicalRecordId(mr.getId());
+                    if (prescOpt.isPresent() && prescOpt.get().getItems() != null && !prescOpt.get().getItems().isEmpty()) {
+                        List<PrescriptionItem> items = prescOpt.get().getItems();
+                        reply.append("   • **Đơn thuốc đã kê (").append(items.size()).append(" loại):** ");
+                        String medNames = items.stream().limit(3).map(PrescriptionItem::getMedicineName).collect(Collectors.joining(", "));
+                        reply.append(medNames);
+                        if (items.size() > 3) {
+                            reply.append(" (và ").append(items.size() - 3).append(" loại khác)");
+                        }
+                        reply.append("\n");
+                    }
+                } else {
+                    reply.append("   • **Tình trạng:** Buổi khám đã hoàn thành.\n");
+                }
+                reply.append("\n");
+            }
+
+            reply.append("👉 *Bạn có thể vào mục **[Lịch sử khám]** để xem chi tiết bệnh án và đơn thuốc đầy đủ.*");
+
+            return AiChatResponse.builder()
+                    .reply(reply.toString())
+                    .intent("PATIENT_HISTORY")
+                    .quickSuggestions(List.of(
+                            "Xem lịch sử khám",
+                            "Xem lịch hẹn sắp tới",
+                            "Đặt lịch khám mới",
+                            "Hotline: 1900 1234"
+                    ))
+                    .build();
+        }
+
+        // CASE B: User asks for upcoming appointments or general "lịch của tôi"
+        if (!upcoming.isEmpty()) {
+            reply.append("👋 **Chào ").append(patientName).append(", bạn đang có ").append(upcoming.size()).append(" lịch hẹn sắp tới tại YouMed:**\n\n");
+            formatUpcomingAppointmentList(reply, upcoming);
+
+            if (!completed.isEmpty()) {
+                reply.append("\n\n💡 *Ngoài ra, bạn đã hoàn thành **").append(completed.size()).append(" buổi khám** trước đây. Bạn có thể tra cứu đơn thuốc và chẩn đoán tại mục **[Lịch sử khám]**.*");
+            }
+
+            return AiChatResponse.builder()
+                    .reply(reply.toString())
+                    .intent("UPCOMING_APPOINTMENTS")
+                    .quickSuggestions(List.of(
+                            "Xem lịch sử khám",
+                            "Đặt lịch khám mới",
+                            "Hotline: 1900 1234"
+                    ))
+                    .build();
+        }
+
+        // CASE C: No upcoming appointments, but has past appointments
+        if (!completed.isEmpty()) {
+            reply.append("👋 Chào **").append(patientName).append("**!\n\n");
+            reply.append("Hiện tại bạn **không có lịch hẹn khám nào sắp tới** tại YouMed.\n\n");
+            reply.append("📋 Gần nhất bạn có buổi khám đã hoàn thành vào ngày **")
+                    .append(completed.get(0).getAppointmentTime() != null
+                            ? completed.get(0).getAppointmentTime().format(DateTimeFormatter.ofPattern("dd/MM/yyyy")) : "")
+                    .append("** với Bác sĩ **")
+                    .append(completed.get(0).getDoctor() != null && completed.get(0).getDoctor().getUser() != null
+                            ? completed.get(0).getDoctor().getUser().getFullName() : "")
+                    .append("**.\n\n");
+            reply.append("💡 *Nếu bạn cảm thấy có triệu chứng bất thường hoặc cần tái khám, bạn có thể đặt lịch ngay bây giờ nhé!*");
+
+            return AiChatResponse.builder()
+                    .reply(reply.toString())
+                    .intent("NO_UPCOMING_APPOINTMENTS")
+                    .quickSuggestions(List.of(
+                            "Đặt lịch khám mới",
+                            "Xem lịch sử khám",
+                            "Bảng giá khám bệnh",
+                            "Hotline: 1900 1234"
+                    ))
+                    .build();
+        }
+
+        // CASE D: Completely new patient (No appointments at all)
+        reply.append("👋 Chào **").append(patientName).append("**!\n\n");
+        reply.append("Hiện tại bạn **chưa có lịch hẹn khám nào** trên hệ thống YouMed.\n\n");
+        reply.append("Bạn đang có triệu chứng cần tư vấn hoặc muốn đặt lịch với chuyên khoa nào? Tôi có thể hỗ trợ bạn kiểm tra lịch trống của bác sĩ và đặt lịch hẹn trực tuyến ngay bây giờ!");
+
+        return AiChatResponse.builder()
+                .reply(reply.toString())
+                .intent("NEW_PATIENT_NO_APPOINTMENTS")
+                .quickSuggestions(List.of(
+                        "Đặt lịch khám mới",
+                        "Tìm bác sĩ Tim mạch",
+                        "Tìm bác sĩ Tiêu hóa",
+                        "Bảng giá khám bệnh"
+                ))
+                .build();
+    }
+
+    private void formatUpcomingAppointmentList(StringBuilder reply, List<Appointment> upcoming) {
+        DateTimeFormatter timeFmt = DateTimeFormatter.ofPattern("HH:mm");
+        DateTimeFormatter dateFmt = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+
+        int idx = 0;
+        for (Appointment a : upcoming) {
+            idx++;
+            String docName = (a.getDoctor() != null && a.getDoctor().getUser() != null)
+                    ? a.getDoctor().getUser().getFullName() : "Bác sĩ YouMed";
+            String specName = (a.getDoctor() != null && a.getDoctor().getSpecialty() != null)
+                    ? a.getDoctor().getSpecialty().getName() : "Đa khoa";
+
+            String timeStr = a.getAppointmentTime() != null ? a.getAppointmentTime().format(timeFmt) : "08:00";
+            String dateStr = a.getAppointmentTime() != null ? a.getAppointmentTime().format(dateFmt) : "Hôm nay";
+
+            String statusStr = "⏳ Đang chờ xác nhận";
+            if (a.getStatus() == AppointmentStatus.CONFIRMED) {
+                statusStr = "✅ Đã xác nhận";
+            } else if (a.getStatus() == AppointmentStatus.CHECKED_IN) {
+                statusStr = "🏥 Đã tiếp nhận tại phòng khám";
+            } else if (a.getStatus() == AppointmentStatus.IN_PROGRESS) {
+                statusStr = "🩺 Đang khám bệnh";
+            }
+
+            reply.append(idx).append(". 🩺 **Khám ").append(specName).append("**\n");
+            reply.append("   • **Bác sĩ:** ").append(docName).append("\n");
+            reply.append("   • **Thời gian:** ").append(timeStr).append(" — Ngày **").append(dateStr).append("**\n");
+            reply.append("   • **Trạng thái:** ").append(statusStr).append("\n");
+            if (a.getReason() != null && !a.getReason().isBlank()) {
+                reply.append("   • **Lý do khám:** ").append(a.getReason().trim()).append("\n");
+            }
+            reply.append("   • **Địa chỉ:** Phòng khám YouMed, 123 Hải Triều, Q.1, TP.HCM\n\n");
+        }
+        reply.append("💡 *Lưu ý: Bạn vui lòng có mặt trước 15 phút so với giờ hẹn để đo sinh hiệu và làm thủ tục tiếp đón nhé!*");
+    }
 }
+

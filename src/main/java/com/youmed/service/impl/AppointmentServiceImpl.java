@@ -46,6 +46,7 @@ public class AppointmentServiceImpl implements AppointmentService {
     private final com.youmed.service.InvoiceService invoiceService;
     
     private final com.youmed.repository.InvoiceRepository invoiceRepository;
+    private final com.youmed.repository.DoctorReviewRepository doctorReviewRepository;
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -75,36 +76,36 @@ public class AppointmentServiceImpl implements AppointmentService {
                 .orElseThrow(() -> new ResourceNotFoundException("Time slot not found"));
 
         if (Boolean.TRUE.equals(timeSlot.getBooked())) {
-            throw new DuplicateResourceException("Slot already booked");
+            throw new DuplicateResourceException("Khung giờ này đã có người đặt, vui lòng chọn giờ khác");
         }
 
         if (timeSlot.getStartDateTime().isBefore(LocalDateTime.now().plusMinutes(30))) {
-            throw new BadRequestException("Appointment must be booked at least 30 minutes in advance");
+            throw new BadRequestException("Lịch hẹn cần được đặt trước giờ khám ít nhất 30 phút");
         }
 
         Doctor doctor = timeSlot.getDoctorSchedule().getDoctor();
 
         if (!Boolean.TRUE.equals(timeSlot.getActive())) {
-            throw new BadRequestException("Time slot is inactive");
+            throw new BadRequestException("Khung giờ khám không khả dụng");
         }
 
         if (!Boolean.TRUE.equals(timeSlot.getDoctorSchedule().getActive())) {
-            throw new BadRequestException("Doctor schedule is inactive");
+            throw new BadRequestException("Lịch làm việc của bác sĩ chưa kích hoạt");
         }
 
         if (timeSlot.getDoctorSchedule().getStatus() != com.youmed.enums.ScheduleStatus.APPROVED) {
-            throw new BadRequestException("Doctor schedule is not approved");
+            throw new BadRequestException("Lịch làm việc của bác sĩ chưa được duyệt");
         }
 
         if (!Boolean.TRUE.equals(doctor.getActive())) {
-            throw new BadRequestException("Doctor is inactive");
+            throw new BadRequestException("Bác sĩ hiện không hoạt động");
         }
 
         if (appointmentRepository.existsByPatientIdAndTimeSlotStartDateTimeAndStatusNot(
                 patient.getId(),
                 timeSlot.getStartDateTime(),
                 AppointmentStatus.CANCELLED)) {
-            throw new BadRequestException("You already have an appointment at this time");
+            throw new BadRequestException("Bạn đã có một lịch hẹn khác vào khung giờ này");
         }
 
         Appointment appointment = Appointment.builder()
@@ -284,19 +285,30 @@ public class AppointmentServiceImpl implements AppointmentService {
 
     @Override
     public Page<AppointmentResponse> getAllAppointments(String status, int page, int size, String sortBy, String sortDir) {
+        return getAllAppointments("", status, null, page, size, sortBy, sortDir);
+    }
+
+    @Override
+    public Page<AppointmentResponse> getAllAppointments(String keyword, String status, String date, int page, int size, String sortBy, String sortDir) {
+        String safeKeyword = (keyword == null) ? "" : keyword.trim().replace("#", "");
+        String safeStatus = (status == null || "ALL".equalsIgnoreCase(status.trim())) ? "" : status.trim();
+
+        LocalDateTime startDate = null;
+        LocalDateTime endDate = null;
+        if (date != null && !date.trim().isEmpty()) {
+            try {
+                java.time.LocalDate localDate = java.time.LocalDate.parse(date.trim());
+                startDate = localDate.atStartOfDay();
+                endDate = localDate.atTime(java.time.LocalTime.MAX);
+            } catch (Exception ignored) {
+            }
+        }
+
         Sort sort = sortDir.equalsIgnoreCase(Sort.Direction.ASC.name()) ? Sort.by(sortBy).ascending() : Sort.by(sortBy).descending();
         Pageable pageable = PageRequest.of(page, size, sort);
 
-        if (status == null || status.trim().isEmpty()) {
-            return appointmentRepository.findAll(pageable).map(this::mapToResponse);
-        }
-
-        try {
-            AppointmentStatus appointmentStatus = AppointmentStatus.valueOf(status.trim().toUpperCase());
-            return appointmentRepository.findByStatus(appointmentStatus, pageable).map(this::mapToResponse);
-        } catch (IllegalArgumentException e) {
-            return Page.empty(pageable);
-        }
+        return appointmentRepository.searchAppointments(safeKeyword, safeStatus, startDate, endDate, pageable)
+                .map(this::mapToResponse);
     }
 
     @Override
@@ -309,36 +321,36 @@ public class AppointmentServiceImpl implements AppointmentService {
                 .orElseThrow(() -> new ResourceNotFoundException("Time slot not found"));
 
         if (Boolean.TRUE.equals(timeSlot.getBooked())) {
-            throw new DuplicateResourceException("Slot already booked");
+            throw new DuplicateResourceException("Khung giờ này đã có người đặt, vui lòng chọn giờ khác");
         }
 
         if (timeSlot.getStartDateTime().isBefore(LocalDateTime.now().plusMinutes(30))) {
-            throw new BadRequestException("Appointment must be booked at least 30 minutes in advance");
+            throw new BadRequestException("Lịch hẹn cần được đặt trước giờ khám ít nhất 30 phút");
         }
 
         Doctor doctor = timeSlot.getDoctorSchedule().getDoctor();
 
         if (!Boolean.TRUE.equals(timeSlot.getActive())) {
-            throw new BadRequestException("Time slot is inactive");
+            throw new BadRequestException("Khung giờ khám không khả dụng");
         }
 
         if (!Boolean.TRUE.equals(timeSlot.getDoctorSchedule().getActive())) {
-            throw new BadRequestException("Doctor schedule is inactive");
+            throw new BadRequestException("Lịch làm việc của bác sĩ chưa kích hoạt");
         }
 
         if (timeSlot.getDoctorSchedule().getStatus() != com.youmed.enums.ScheduleStatus.APPROVED) {
-            throw new BadRequestException("Doctor schedule is not approved");
+            throw new BadRequestException("Lịch làm việc của bác sĩ chưa được duyệt");
         }
 
         if (!Boolean.TRUE.equals(doctor.getActive())) {
-            throw new BadRequestException("Doctor is inactive");
+            throw new BadRequestException("Bác sĩ hiện không hoạt động");
         }
 
         if (appointmentRepository.existsByPatientIdAndTimeSlotStartDateTimeAndStatusNot(
                 patient.getId(),
                 timeSlot.getStartDateTime(),
                 AppointmentStatus.CANCELLED)) {
-            throw new BadRequestException("Patient already has an appointment at this time");
+            throw new BadRequestException("Bệnh nhân đã có một lịch hẹn khác vào khung giờ này");
         }
 
         Appointment appointment = Appointment.builder()
@@ -406,6 +418,19 @@ public class AppointmentServiceImpl implements AppointmentService {
 
     private AppointmentResponse mapToResponse(Appointment appointment) {
 
+        boolean hasReviewed = false;
+        Integer reviewRating = null;
+        Long reviewId = null;
+
+        if (doctorReviewRepository != null && appointment.getStatus() == AppointmentStatus.COMPLETED) {
+            java.util.Optional<com.youmed.entity.DoctorReview> reviewOpt = doctorReviewRepository.findByAppointmentId(appointment.getId());
+            if (reviewOpt.isPresent()) {
+                hasReviewed = true;
+                reviewRating = reviewOpt.get().getRating();
+                reviewId = reviewOpt.get().getId();
+            }
+        }
+
         return AppointmentResponse.builder()
                 .id(appointment.getId())
                 .patientId(appointment.getPatient().getId())
@@ -419,6 +444,9 @@ public class AppointmentServiceImpl implements AppointmentService {
                 .reason(appointment.getReason())
                 .status(appointment.getStatus())
                 .createdAt(appointment.getCreatedAt())
+                .hasReviewed(hasReviewed)
+                .reviewRating(reviewRating)
+                .reviewId(reviewId)
                 .build();
     }
 }

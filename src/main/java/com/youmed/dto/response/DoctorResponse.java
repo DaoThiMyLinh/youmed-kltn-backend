@@ -27,4 +27,8 @@ public class DoctorResponse {
     private String imageUrl;
 
     private LocalDateTime createdAt;
+
+    private Double averageRating;
+
+    private Long totalReviews;
 }
