@@ -12,6 +12,10 @@ import org.springframework.data.domain.Page;
 
 import java.util.List;
 
+import com.youmed.dto.response.DoctorRatingSummaryResponse;
+import com.youmed.dto.response.DoctorReviewResponse;
+import com.youmed.service.DoctorReviewService;
+import org.springframework.http.ResponseEntity;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
 @RestController
@@ -21,6 +25,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 public class DoctorController {
 
     private final DoctorService doctorService;
+    private final DoctorReviewService doctorReviewService;
 
 
     @PostMapping
@@ -33,7 +38,6 @@ public class DoctorController {
 
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN','DOCTOR','PATIENT')")
     public Page<DoctorResponse> getAllDoctors(
             @RequestParam(required = false) Boolean active,
             @RequestParam(defaultValue = "0") int page,
@@ -47,7 +51,6 @@ public class DoctorController {
 
 
     @GetMapping("/search")
-    @PreAuthorize("hasAnyRole('ADMIN','DOCTOR','PATIENT')")
     public Page<DoctorResponse> searchDoctors(
             @RequestParam(required = false) String keyword,
             @RequestParam(defaultValue = "0") int page,
@@ -60,12 +63,27 @@ public class DoctorController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN','DOCTOR','PATIENT')")
     public DoctorResponse getDoctorById(
             @PathVariable Long id
     ){
 
         return doctorService.getDoctorById(id);
+    }
+
+    @GetMapping("/{id}/reviews")
+    public ResponseEntity<Page<DoctorReviewResponse>> getDoctorReviews(
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size
+    ) {
+        return ResponseEntity.ok(doctorReviewService.getReviewsByDoctorId(id, page, size));
+    }
+
+    @GetMapping("/{id}/rating-summary")
+    public ResponseEntity<DoctorRatingSummaryResponse> getDoctorRatingSummary(
+            @PathVariable Long id
+    ) {
+        return ResponseEntity.ok(doctorReviewService.getDoctorRatingSummary(id));
     }
 
 

@@ -68,6 +68,11 @@ public class MedicalRecordServiceImpl implements MedicalRecordService {
                 .diagnosis(request.getDiagnosis())
                 .symptoms(request.getSymptoms())
                 .notes(request.getNotes())
+                .followUpDate(request.getFollowUpDate())
+                .referralTarget(request.getReferralTarget())
+                .referralServices(request.getReferralServices())
+                .referralReason(request.getReferralReason())
+                .referralNotes(request.getReferralNotes())
                 .build();
 
         return mapToResponse(medicalRecordRepository.save(record));
@@ -94,6 +99,11 @@ public class MedicalRecordServiceImpl implements MedicalRecordService {
         if (request.getNotes() != null) {
             record.setNotes(request.getNotes());
         }
+        record.setFollowUpDate(request.getFollowUpDate());
+        record.setReferralTarget(request.getReferralTarget());
+        record.setReferralServices(request.getReferralServices());
+        record.setReferralReason(request.getReferralReason());
+        record.setReferralNotes(request.getReferralNotes());
 
         return mapToResponse(medicalRecordRepository.save(record));
     }
@@ -154,6 +164,11 @@ public class MedicalRecordServiceImpl implements MedicalRecordService {
                 .diagnosis(record.getDiagnosis())
                 .symptoms(record.getSymptoms())
                 .notes(record.getNotes())
+                .followUpDate(record.getFollowUpDate())
+                .referralTarget(record.getReferralTarget())
+                .referralServices(record.getReferralServices())
+                .referralReason(record.getReferralReason())
+                .referralNotes(record.getReferralNotes())
                 .createdAt(record.getCreatedAt())
                 .updatedAt(record.getUpdatedAt())
                 .build();

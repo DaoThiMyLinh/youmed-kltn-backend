@@ -24,5 +24,7 @@ public class DoctorResponse {
 
     private Boolean active;
 
+    private String imageUrl;
+
     private LocalDateTime createdAt;
 }

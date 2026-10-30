@@ -5,6 +5,7 @@ import jakarta.persistence.*;
 import lombok.*;
 
 
+@com.fasterxml.jackson.annotation.JsonIgnoreProperties({"hibernateLazyInitializer", "handler"}) 
 @Entity
 @Table(name = "doctors")
 @Getter
@@ -34,6 +35,9 @@ public class Doctor extends BaseEntity {
     @Column(columnDefinition = "TEXT")
     private String biography;
 
+
+    @Column(name = "image_url")
+    private String imageUrl;
 
     @Column(nullable = false)
     @Builder.Default

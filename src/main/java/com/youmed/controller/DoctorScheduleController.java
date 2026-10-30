@@ -1,7 +1,9 @@
 package com.youmed.controller;
 
 import com.youmed.dto.request.DoctorScheduleRequest;
+import com.youmed.dto.request.DoctorScheduleRangeRequest;
 import com.youmed.dto.response.DoctorScheduleResponse;
+import com.youmed.dto.response.DoctorScheduleRangeResponse;
 import com.youmed.dto.response.TimeSlotResponse;
 import com.youmed.service.DoctorScheduleService;
 import jakarta.validation.Valid;
@@ -27,13 +29,20 @@ public class DoctorScheduleController {
         return doctorScheduleService.createSchedule(request);
     }
 
-    @GetMapping("/doctor-schedules/doctor/{doctorId}")
+    @PostMapping("/doctor-schedules/range")
+    @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("hasAnyRole('ADMIN', 'DOCTOR')")
+    public DoctorScheduleRangeResponse createScheduleRange(@Valid @RequestBody DoctorScheduleRangeRequest request) {
+        return doctorScheduleService.createScheduleRange(request);
+    }
+
+    @GetMapping("/doctor-schedules/doctor/{doctorId:\\d+}")
     @PreAuthorize("hasAnyRole('ADMIN', 'DOCTOR')")
     public List<DoctorScheduleResponse> getSchedulesByDoctor(@PathVariable Long doctorId) {
         return doctorScheduleService.getSchedulesByDoctor(doctorId);
     }
 
-    @DeleteMapping("/doctor-schedules/{id}")
+    @DeleteMapping("/doctor-schedules/{id:\\d+}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasAnyRole('ADMIN', 'DOCTOR')")
     public void deleteSchedule(@PathVariable Long id) {

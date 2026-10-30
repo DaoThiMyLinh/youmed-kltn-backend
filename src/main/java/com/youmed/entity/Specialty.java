@@ -3,6 +3,7 @@ package com.youmed.entity;
 import jakarta.persistence.*;
 import lombok.*;
 
+@com.fasterxml.jackson.annotation.JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 @Entity
 @Table(name = "specialties")
 @Getter
@@ -22,6 +23,11 @@ public class Specialty extends BaseEntity {
     @Column(columnDefinition = "TEXT")
     private String description;
 
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "manager_id", unique = true)
+    private User manager;
+
+    @Column(name = "image_url")
     private String imageUrl;
 
     @Column(nullable = false)

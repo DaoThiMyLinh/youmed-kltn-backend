@@ -23,6 +23,10 @@ import com.youmed.service.EmailService;
 import java.time.LocalDateTime;
 import java.util.Random;
 
+import org.springframework.beans.factory.annotation.Value;
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AuthServiceImpl implements AuthService {
@@ -33,6 +37,15 @@ public class AuthServiceImpl implements AuthService {
     private final JwtService jwtService;
     private final OtpRepository otpRepository;
     private final EmailService emailService;
+
+    @Value("${app.otp.dev-log-enabled:false}")
+    private boolean devOtpLogEnabled;
+
+    private void logDevOtp(String email, String otp) {
+        if (devOtpLogEnabled) {
+            log.info("\n=================================\nDEV OTP\nEmail: {}\nOTP: {}\n=================================", email, otp);
+        }
+    }
 
     @Override
     public RegisterResponse register(RegisterRequest request) {
@@ -54,6 +67,7 @@ public class AuthServiceImpl implements AuthService {
 
         // Send Email
         emailService.sendOtpEmail(request.getEmail(), otp);
+        logDevOtp(request.getEmail(), otp);
 
         return RegisterResponse.builder()
                 .id(0L) // Dummy ID since user is not created yet
@@ -142,6 +156,7 @@ public class AuthServiceImpl implements AuthService {
 
         // Send Email
         emailService.sendForgotPasswordEmail(request.getEmail(), otp);
+        logDevOtp(request.getEmail(), otp);
     }
 
     @Override

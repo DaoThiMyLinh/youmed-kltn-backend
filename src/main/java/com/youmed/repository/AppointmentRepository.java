@@ -43,4 +43,9 @@ public interface AppointmentRepository
             AppointmentStatus status
     );
 
+    Page<Appointment> findByStatus(
+            AppointmentStatus status,
+            Pageable pageable
+    );
+
 }

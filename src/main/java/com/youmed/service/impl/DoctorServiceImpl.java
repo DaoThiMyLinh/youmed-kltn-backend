@@ -90,10 +90,10 @@ public class DoctorServiceImpl implements DoctorService {
         Pageable pageable = PageRequest.of(page, size, sort);
 
         if (active == null) {
-            return doctorRepository.findAll(pageable).map(this::mapToResponse);
+            return doctorRepository.findAllDoctorsWithCorrectRole(pageable).map(this::mapToResponse);
         }
         
-        return doctorRepository.findByActive(active, pageable).map(this::mapToResponse);
+        return doctorRepository.findByActiveWithCorrectRole(active, pageable).map(this::mapToResponse);
     }
 
 
@@ -111,10 +111,10 @@ public class DoctorServiceImpl implements DoctorService {
         Pageable pageable = PageRequest.of(page, size, sort);
 
         if (keyword == null || keyword.trim().isEmpty()) {
-            return doctorRepository.findAll(pageable).map(this::mapToResponse);
+            return doctorRepository.findAllDoctorsWithCorrectRole(pageable).map(this::mapToResponse);
         }
 
-        return doctorRepository.findByUserFullNameContainingIgnoreCaseOrSpecialtyNameContainingIgnoreCase(keyword.trim(), keyword.trim(), pageable)
+        return doctorRepository.searchDoctorsWithCorrectRole(keyword.trim(), pageable)
                 .map(this::mapToResponse);
     }
 
@@ -142,7 +142,6 @@ public class DoctorServiceImpl implements DoctorService {
         User user = doctor.getUser();
         user.setFullName(request.getFullName());
         user.setPhone(request.getPhone());
-        userRepository.save(user);
 
         if (request.getSpecialtyId() != null) {
             Specialty specialty = specialtyRepository.findById(request.getSpecialtyId())
@@ -155,7 +154,10 @@ public class DoctorServiceImpl implements DoctorService {
 
         if (request.getActive() != null) {
             doctor.setActive(request.getActive());
+            user.setEnabled(request.getActive());
         }
+
+        userRepository.save(user);
 
 
         return mapToResponse(
@@ -185,8 +187,8 @@ public class DoctorServiceImpl implements DoctorService {
                     .id(doctor.getSpecialty().getId())
                     .name(doctor.getSpecialty().getName())
                     .description(doctor.getSpecialty().getDescription())
-                    .imageUrl(doctor.getSpecialty().getImageUrl())
                     .active(doctor.getSpecialty().getActive())
+                    .imageUrl(doctor.getSpecialty().getImageUrl())
                     .build();
         }
 
@@ -199,6 +201,7 @@ public class DoctorServiceImpl implements DoctorService {
                 .email(doctor.getUser().getEmail())
                 .biography(doctor.getBiography())
                 .active(doctor.getActive())
+                .imageUrl(doctor.getImageUrl())
                 .createdAt(doctor.getCreatedAt())
                 .build();
     }
